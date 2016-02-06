@@ -23,6 +23,7 @@ module Scanner ( ScannedToken(..)
 
 ----------------------------------- Tokens ------------------------------------
 
+$digit = [0-9]
 $alpha = [a-zA-Z]
 
 tokens :-
@@ -31,7 +32,10 @@ tokens :-
   class   { \posn s -> scannedToken posn $ Keyword s }
   \{      { \posn _ -> scannedToken posn LCurly }
   \}      { \posn _ -> scannedToken posn RCurly }
-  $alpha+ { \posn s -> scannedToken posn $ Identifier s }
+  ($alpha|_)($alpha|_|$digit)*
+          { \posn s -> scannedToken posn $ Identifier s }
+  "'" [^ '\'']+ "'"
+          { \posn s -> scannedToken posn $ CharLiteral (tail (init s)) }
 
 
 ----------------------------- Representing tokens -----------------------------
@@ -46,6 +50,7 @@ data ScannedToken = ScannedToken { line :: Int
 -- | A token.
 data Token = Keyword String
            | Identifier String
+           | CharLiteral String
            | LCurly
            | RCurly
            deriving (Eq)
@@ -54,6 +59,7 @@ instance Show Token where
   show (Identifier s) = "IDENTIFIER " ++ s
   show LCurly = "{"
   show RCurly = "}"
+  show (CharLiteral c) = "CHARLITERAL '" ++ c ++ "'"
 
 {-| Smart constructor to create a 'ScannedToken' by extracting the line and
 column numbers from an 'AlexPosn'. -}
