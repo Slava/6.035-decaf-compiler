@@ -47,7 +47,7 @@ main = do
     configuration <- ExceptT CLI.getConfiguration
     input <- readFile $ Configuration.input configuration
     -- Part II: Process it
-    hoistEither $ process configuration input
+    hoistEither $ process configuration (input ++ "\n")
   case result of
     -- Part III: Write output
     Left errorMessage -> fatal errorMessage

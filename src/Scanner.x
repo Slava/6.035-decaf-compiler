@@ -25,16 +25,26 @@ module Scanner ( ScannedToken(..)
 
 $digit = [0-9]
 $alpha = [a-zA-Z]
+@char = (\\[\\nt\'\"]|[\x20-\x7e] # [\'\"\\])
+@hex = "0x" [0-9a-fA-F]+
+@number = $digit+
 
 tokens :-
   $white+ ;
   "//".*  ;                     -- comment
-  class   { \posn s -> scannedToken posn $ Keyword s }
+  boolean | break | callout | continue | else | for | while | if | int | return | void
+          { \posn s -> scannedToken posn $ Keyword s }
+  true | false
+          { \posn s -> scannedToken posn $ BooleanLiteral s }
+  @hex | @number
+          { \posn s -> scannedToken posn $ IntLiteral s }
+  \" @char* \"
+          { \posn s -> scannedToken posn $ StringLiteral s }
   \{      { \posn _ -> scannedToken posn LCurly }
   \}      { \posn _ -> scannedToken posn RCurly }
   ($alpha|_)($alpha|_|$digit)*
           { \posn s -> scannedToken posn $ Identifier s }
-  "'" [^ '\'']+ "'"
+  \' @char \'
           { \posn s -> scannedToken posn $ CharLiteral (tail (init s)) }
 
 
@@ -51,6 +61,9 @@ data ScannedToken = ScannedToken { line :: Int
 data Token = Keyword String
            | Identifier String
            | CharLiteral String
+           | BooleanLiteral String
+           | IntLiteral String
+           | StringLiteral String
            | LCurly
            | RCurly
            deriving (Eq)
@@ -60,6 +73,9 @@ instance Show Token where
   show LCurly = "{"
   show RCurly = "}"
   show (CharLiteral c) = "CHARLITERAL '" ++ c ++ "'"
+  show (BooleanLiteral b) = "BOOLEANLITERAL " ++ b
+  show (IntLiteral i) = "INTLITERAL " ++ i
+  show (StringLiteral s) = "STRINGLITERAL " ++ s
 
 {-| Smart constructor to create a 'ScannedToken' by extracting the line and
 column numbers from an 'AlexPosn'. -}
