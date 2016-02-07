@@ -42,6 +42,32 @@ tokens :-
           { \posn s -> scannedToken posn $ StringLiteral s }
   \{      { \posn _ -> scannedToken posn LCurly }
   \}      { \posn _ -> scannedToken posn RCurly }
+  \(      { \posn _ -> scannedToken posn LParen }
+  \)      { \posn _ -> scannedToken posn RParen }
+  \[      { \posn _ -> scannedToken posn LBrack }
+  \]      { \posn _ -> scannedToken posn RBrack }
+  \+      { \posn _ -> scannedToken posn Plus   }
+  \-      { \posn _ -> scannedToken posn Minus  }
+  \/      { \posn _ -> scannedToken posn Slash  }
+  \*      { \posn _ -> scannedToken posn Asterisk }
+  \%      { \posn _ -> scannedToken posn Percent }
+  \!      { \posn _ -> scannedToken posn Excl   }
+  \>      { \posn _ -> scannedToken posn GreaterThan }
+  \<      { \posn _ -> scannedToken posn LessThan }
+  ">="    { \posn _ -> scannedToken posn GreaterThanEq }
+  "<="    { \posn _ -> scannedToken posn LessThanEq }
+  "=="    { \posn _ -> scannedToken posn EqEq   }
+  "!="    { \posn _ -> scannedToken posn ExclEq }
+  "&&"    { \posn _ -> scannedToken posn AmpAmp }
+  "||"    { \posn _ -> scannedToken posn PipePipe }
+  \?      { \posn _ -> scannedToken posn QuestM }
+  \:      { \posn _ -> scannedToken posn Colon  }
+  \;      { \posn _ -> scannedToken posn Semicol }
+  \,      { \posn _ -> scannedToken posn Comma }
+  \@      { \posn _ -> scannedToken posn AtSign }
+  \=      { \posn _ -> scannedToken posn EqSign }
+  "-="    { \posn _ -> scannedToken posn MinusEq }
+  "+="    { \posn _ -> scannedToken posn PlusEq }
   ($alpha|_)($alpha|_|$digit)*
           { \posn s -> scannedToken posn $ Identifier s }
   \' @char \'
@@ -66,12 +92,64 @@ data Token = Keyword String
            | StringLiteral String
            | LCurly
            | RCurly
+           | LParen
+           | RParen
+           | LBrack
+           | RBrack
+           | Plus
+           | Minus
+           | Slash
+           | Asterisk
+           | Percent
+           | Excl
+           | GreaterThan
+           | LessThan
+           | GreaterThanEq
+           | LessThanEq
+           | EqEq
+           | ExclEq
+           | AmpAmp
+           | PipePipe
+           | QuestM
+           | Colon
+           | Semicol
+           | Comma
+           | AtSign
+           | EqSign
+           | MinusEq
+           | PlusEq
            deriving (Eq)
 instance Show Token where
   show (Keyword k) = k
   show (Identifier s) = "IDENTIFIER " ++ s
   show LCurly = "{"
   show RCurly = "}"
+  show LParen = "("
+  show RParen = ")"
+  show LBrack = "["
+  show RBrack = "]"
+  show Plus = "+"
+  show Minus = "-"
+  show Slash = "/"
+  show Asterisk = "*"
+  show Percent = "%"
+  show Excl = "!"
+  show GreaterThan = ">"
+  show LessThan = "<"
+  show GreaterThanEq = ">="
+  show LessThanEq = "<="
+  show EqEq = "=="
+  show ExclEq = "!="
+  show AmpAmp = "&&"
+  show PipePipe = "||"
+  show QuestM = "?"
+  show Colon = ":"
+  show Semicol = ";"
+  show Comma = ",";
+  show AtSign = "@"
+  show EqSign = "="
+  show MinusEq = "-="
+  show PlusEq = "+="
   show (CharLiteral c) = "CHARLITERAL '" ++ c ++ "'"
   show (BooleanLiteral b) = "BOOLEANLITERAL " ++ b
   show (IntLiteral i) = "INTLITERAL " ++ i
