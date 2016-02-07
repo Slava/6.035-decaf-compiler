@@ -28,9 +28,10 @@ $alpha = [a-zA-Z]
 @char = (\\[\\nt\'\"]|[\x20-\x7e] # [\'\"\\])
 @hex = "0x" [0-9a-fA-F]+
 @number = $digit+
+@white = [\ \n\t]
 
 tokens :-
-  $white+ ;
+  @white+ ;
   "//".*  ;                     -- comment
   boolean | break | callout | continue | else | for | while | if | int | return | void
           { \posn s -> scannedToken posn $ Keyword s }

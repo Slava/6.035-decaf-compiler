@@ -24,6 +24,7 @@ import System.Environment (getProgName)
 import qualified System.Exit
 import System.IO (IOMode(..), hClose, hPutStrLn, openFile, stdout, stderr)
 import Text.Printf (printf)
+import Data.List.Split (splitOn)
 
 import qualified CLI
 import Configuration (Configuration, CompilerStage(..))
@@ -74,7 +75,7 @@ parser won't contain the file name--the file name has to get added in this
 function. -}
 mungeErrorMessage :: Configuration -> Either String a -> Either String a
 mungeErrorMessage configuration =
-  ifLeft ((Configuration.input configuration ++ " ")++)
+  ifLeft ((last (splitOn "/" (Configuration.input configuration)) ++ " ")++)
   where ifLeft f (Left v) = Left $ f v
         ifLeft _ (Right a) = Right a
 

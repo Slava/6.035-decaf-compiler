@@ -95,7 +95,7 @@ alexScanTokens str = go (alexStartPos,'\n',[],str)
                 AlexError ((AlexPn pos line column), prevChar, currentBytes, inpString) ->
                   let badChar = head inpString in
                   let badCharPres = if (ord badChar) < 32 || (ord badChar) > 126
-                                       then "0x" ++ printf "%X" (ord badChar) else show badChar in
+                                       then "0x" ++ printf "%X" (ord badChar) else printf "'%c'" badChar in
                   let errorMessage = printf "line %d:%d: unexpected char: %s" line column badCharPres :: String
                       inp' = ( AlexPn (pos + 1) line (column + 1)
                              , prevChar
