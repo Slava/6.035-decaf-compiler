@@ -85,28 +85,48 @@ import Scanner (ScannedToken(..), Token(..))
 %% -------------------------------- Grammar -----------------------------------
 
 Program
-      : CalloutDecl* FieldDecl* {--MethodDecl*--} { Declarations $1 ++ $2 {--++ $3--} }
+      : CalloutDecls FieldDecls { Program ($1 ++ $2) }
+
+CalloutDecls
+      : CalloutDecls_ { reverse $1 }
+
+CalloutDecls_
+      : {-- empty --}             { [] }
+      | CalloutDecls_ CalloutDecl { $2 : $1 }
 
 CalloutDecl
       : callout identifier ';' { Callout $2 }
 
+FieldDecls
+      : FieldDecls_ { reverse $1 }
+
+FieldDecls_
+      : {-- empty --}         { [] }
+      | FieldDecls_ FieldDecl { $2 : $1 }
+
 FieldDecl
-      : Type _FieldDecl_Fields ';' { ($1, $2) }
+      : Type FieldDecl_Fields ';' { Fields ($1, $2) }
 
-_FieldDecl_Fields
-      : _fields { reverse $1 }
+FieldDecl_Fields
+      : Fields_ { reverse $1 }
 
-_fields
-      : _field         { [$1] }
-      | _fields _field { $2 : $1 }
+Fields_
+      : Field_         { [$1] }
+      | Fields_ ',' Field_ { $3 : $1 }
 
-_field
+Field_
       : identifier { $1 }
+
+Type
+      : int      { Type "int" }
+      | boolean  { Type "boolean" }
 
 ----------------------------------- Haskell -----------------------------------
 {
-data Program = Program { className :: String
-                       } deriving (Eq)
+data Program = Program [Declaration] deriving (Eq)
+data Declaration = Callout String
+                 | Fields (Type, [String]) deriving (Eq)
+data Type = Type String deriving (Eq)
 
 parseError :: [ScannedToken] -> Either String a
 parseError [] = Left "unexpected EOF"
