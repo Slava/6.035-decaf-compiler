@@ -14,6 +14,7 @@ module Parser ( parse
               ) where
 
 import Text.Printf (printf)
+import Data.List (reverse)
 
 import Scanner (ScannedToken(..), Token(..))
 
@@ -29,16 +30,78 @@ import Scanner (ScannedToken(..), Token(..))
 %tokentype { ScannedToken }
 
 %token
+  -- keywords --
   class      { ScannedToken _ _ (Keyword "class") }
+  boolean    { ScannedToken _ _ (Keyword "boolean") }
+  break      { ScannedToken _ _ (Keyword "break") }
+  callout    { ScannedToken _ _ (Keyword "callout") }
+  continue   { ScannedToken _ _ (Keyword "continue") }
+  else       { ScannedToken _ _ (Keyword "else") }
+  for        { ScannedToken _ _ (Keyword "for") }
+  while      { ScannedToken _ _ (Keyword "while") }
+  if         { ScannedToken _ _ (Keyword "if") }
+  int        { ScannedToken _ _ (Keyword "int") }
+  return     { ScannedToken _ _ (Keyword "return") }
+  void       { ScannedToken _ _ (Keyword "void") }
+
   identifier { ScannedToken _ _ (Identifier $$) }
+
+  charLiteral { ScannedToken _ _ (CharLiteral $$) }
+  booleanLiteral { ScannedToken _ _ (BooleanLiteral $$) }
+  intLiteral { ScannedToken _ _ (IntLiteral $$) }
+  stringLiteral { ScannedToken _ _ (StringLiteral $$) }
+
+  -- special symbols --
   '{'        { ScannedToken _ _ LCurly }
   '}'        { ScannedToken _ _ RCurly }
+  '('        { ScannedToken _ _ LParen }
+  ')'        { ScannedToken _ _ RParen }
+  '['        { ScannedToken _ _ LBrack }
+  ']'        { ScannedToken _ _ RBrack }
+  '+'        { ScannedToken _ _ Plus   }
+  '-'        { ScannedToken _ _ Minus  }
+  '/'        { ScannedToken _ _ Slash  }
+  '*'        { ScannedToken _ _ Asterisk }
+  '%'        { ScannedToken _ _ Percent }
+  '!'        { ScannedToken _ _ Excl   }
+  '>'        { ScannedToken _ _ GreaterThan }
+  '<'        { ScannedToken _ _ LessThan }
+  '?'        { ScannedToken _ _ QuestM }
+  ':'        { ScannedToken _ _ Colon  }
+  ';'        { ScannedToken _ _ Semicol }
+  ','        { ScannedToken _ _ Comma }
+  '@'        { ScannedToken _ _ AtSign }
+  '='        { ScannedToken _ _ EqSign }
+  ">="       { ScannedToken _ _ GreaterThanEq }
+  "<="       { ScannedToken _ _ LessThanEq }
+  "=="       { ScannedToken _ _ EqEq   }
+  "!="       { ScannedToken _ _ ExclEq }
+  "&&"       { ScannedToken _ _ AmpAmp }
+  "||"       { ScannedToken _ _ PipePipe }
+  "-="       { ScannedToken _ _ MinusEq }
+  "+="       { ScannedToken _ _ PlusEq }
 
 
 %% -------------------------------- Grammar -----------------------------------
 
-Program : class identifier '{' '}' { Program $2 }
+Program
+      : CalloutDecl* FieldDecl* {--MethodDecl*--} { Declarations $1 ++ $2 {--++ $3--} }
 
+CalloutDecl
+      : callout identifier ';' { Callout $2 }
+
+FieldDecl
+      : Type _FieldDecl_Fields ';' { ($1, $2) }
+
+_FieldDecl_Fields
+      : _fields { reverse $1 }
+
+_fields
+      : _field         { [$1] }
+      | _fields _field { $2 : $1 }
+
+_field
+      : identifier { $1 }
 
 ----------------------------------- Haskell -----------------------------------
 {
