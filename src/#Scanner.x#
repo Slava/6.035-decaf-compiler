@@ -25,8 +25,7 @@ module Scanner ( ScannedToken(..)
 
 $digit = [0-9]
 $alpha = [a-zA-Z]
-$printable = [\x20-\x7e]
-@char = (\\[\\nt\'\"]|$printable # [\'\"\\])
+@char = (\\[\\nt\'\"]|[\x20-\x7e] # [\'\"\\])
 @hex = "0x" [0-9a-fA-F]+
 @number = $digit+
 @white = [\ \n\t]
@@ -38,7 +37,7 @@ tokens :-
           { \posn s -> scannedToken posn $ Keyword s }
   true | false
           { \posn s -> scannedToken posn $ BooleanLiteral s }
-  @hex | @number /($white|$printable # $alpha # $digit)
+  @hex | @number
           { \posn s -> scannedToken posn $ IntLiteral s }
   \" @char* \"
           { \posn s -> scannedToken posn $ StringLiteral s }
@@ -56,18 +55,18 @@ tokens :-
   \!      { \posn _ -> scannedToken posn Excl   }
   \>      { \posn _ -> scannedToken posn GreaterThan }
   \<      { \posn _ -> scannedToken posn LessThan }
-  ">="    { \posn _ -> scannedToken posn GreaterThanEq }
-  "<="    { \posn _ -> scannedToken posn LessThanEq }
-  "=="    { \posn _ -> scannedToken posn EqEq   }
-  "!="    { \posn _ -> scannedToken posn ExclEq }
-  "&&"    { \posn _ -> scannedToken posn AmpAmp }
-  "||"    { \posn _ -> scannedToken posn PipePipe }
   \?      { \posn _ -> scannedToken posn QuestM }
   \:      { \posn _ -> scannedToken posn Colon  }
   \;      { \posn _ -> scannedToken posn Semicol }
   \,      { \posn _ -> scannedToken posn Comma }
   \@      { \posn _ -> scannedToken posn AtSign }
   \=      { \posn _ -> scannedToken posn EqSign }
+  ">="    { \posn _ -> scannedToken posn GreaterThanEq }
+  "<="    { \posn _ -> scannedToken posn LessThanEq }
+  "=="    { \posn _ -> scannedToken posn EqEq   }
+  "!="    { \posn _ -> scannedToken posn ExclEq }
+  "&&"    { \posn _ -> scannedToken posn AmpAmp }
+  "||"    { \posn _ -> scannedToken posn PipePipe }
   "-="    { \posn _ -> scannedToken posn MinusEq }
   "+="    { \posn _ -> scannedToken posn PlusEq }
   ($alpha|_)($alpha|_|$digit)*

@@ -102,7 +102,7 @@ scan configuration input =
   Right $ [ bracket openOutputHandle hClose $ \hOutput ->
              forM_ tokensAndErrors $ \tokOrError ->
                case tokOrError of
-                 Left err -> hPutStrLn stderr err
+                 Left err -> hPutStrLn {--stderr--} hOutput err
                  Right tok -> hPutStrLn hOutput tok
           ]
   where v |> f = f v            -- like a Unix pipeline, but pure
