@@ -85,7 +85,7 @@ import Scanner (ScannedToken(..), Token(..))
 %% -------------------------------- Grammar -----------------------------------
 
 Program
-      : CalloutDecls FieldDecls { Program ($1 ++ $2) }
+      : CalloutDecls FieldDecls MethodDecls { Program ($1 ++ $2 ++ $3) }
 
 CalloutDecls
       : CalloutDecls_ { reverse $1 }
@@ -117,16 +117,71 @@ Fields_
 Field_
       : identifier { $1 }
 
+MethodDecls
+      : MethodDecls_ { reverse $1 }
+
+MethodDecls_
+      : {-- empty --}           { [] }
+      | MethodDecls_ MethodDecl { $2 : $1 }
+
+MethodDecl
+      : MethodRetType identifier '(' Arguments ')' Block {
+              Method { retType = $1
+                     , name = $2
+                     , args = $4
+                     , vars = (fst $6)
+                     , body = (snd $6) }
+        }
+
+MethodRetType
+      : Type      { $1 }
+      | TypeVoid_ { $1 }
+
+Arguments
+      : Arguments_ { reverse $1 }
+
+Arguments_
+      : {-- empty --}           { [] }
+      | Arguments_ ',' Argument { $3 : $1 }
+
+Argument
+      : Type identifier { Argument ($1, $2) }
+
+Block
+      : '{' FieldDecls Statements '}' { ($2, $3) }
+
+Statements
+      : Statements_ { reverse $1 }
+
+Statements_
+      : {-- empty --}         { [] }
+      | Statements_ Statement { $2 : $1 }
+
+Statement
+      : ';' { Statement }
+
 Type
       : int      { Type "int" }
       | boolean  { Type "boolean" }
+
+TypeVoid_
+      : void     { Type "void" }
 
 ----------------------------------- Haskell -----------------------------------
 {
 data Program = Program [Declaration] deriving (Eq)
 data Declaration = Callout String
-                 | Fields (Type, [String]) deriving (Eq)
+                 | Fields (Type, [String])
+                 | Method { retType :: Type
+                          , name :: String
+                          , args :: [Argument]
+                          , vars :: [Declaration]
+                          , body :: [Statement]}
+                 deriving (Eq)
+
 data Type = Type String deriving (Eq)
+data Argument = Argument (Type, String) deriving (Eq)
+data Statement = Statement deriving (Eq)
 
 parseError :: [ScannedToken] -> Either String a
 parseError [] = Left "unexpected EOF"
