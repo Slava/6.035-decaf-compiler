@@ -46,10 +46,10 @@ import Scanner (ScannedToken(..), Token(..))
 
   identifier { ScannedToken _ _ (Identifier $$) }
 
-  charLiteral { ScannedToken _ _ (CharLiteral $$) }
-  booleanLiteral { ScannedToken _ _ (BooleanLiteral $$) }
-  intLiteral { ScannedToken _ _ (IntLiteral $$) }
-  stringLiteral { ScannedToken _ _ (StringLiteral $$) }
+  charLiteral { ScannedToken _ _ (Scanner.CharLiteral $$) }
+  booleanLiteral { ScannedToken _ _ (Scanner.BooleanLiteral $$) }
+  intLiteral { ScannedToken _ _ (Scanner.IntLiteral $$) }
+  stringLiteral { ScannedToken _ _ (Scanner.StringLiteral $$) }
 
   -- special symbols --
   '{'        { ScannedToken _ _ LCurly }
@@ -158,7 +158,26 @@ Statements_
       | Statements_ Statement { $2 : $1 }
 
 Statement
-      : ';' { Statement }
+      : Location AssignOp Expression ';' { constructAssignmentStatement $1 $2 $3 }
+
+Location
+      : Location_ { LocationExpr $1 }
+
+Location_
+      : identifier Location_sub { Location ($1, $2) }
+
+Location_sub
+      : '[' Expression ']' { Just $2 }
+      | {-- empty --}      { Nothing }
+
+AssignOp
+      : '='  { AssignmentOp }
+      | "+=" { AddAssignmentOp }
+      | "-=" { SubtractAssignmentOp }
+
+Expression
+      : Location       { $1 }
+      | Literal        { LiteralExpr $1 }
 
 Type
       : int      { Type "int" }
@@ -166,6 +185,13 @@ Type
 
 TypeVoid_
       : void     { Type "void" }
+
+Literal
+      : intLiteral     { Parser.IntLiteral (read $1) }
+      | charLiteral    { Parser.CharLiteral (head $1) }
+      | booleanLiteral {
+          Parser.BoolLiteral (if $1 == "true" then True else False)
+          }
 
 ----------------------------------- Haskell -----------------------------------
 {
@@ -181,7 +207,23 @@ data Declaration = Callout String
 
 data Type = Type String deriving (Eq)
 data Argument = Argument (Type, String) deriving (Eq)
-data Statement = Statement deriving (Eq)
+data Statement = Assignment (Expression, Expression) deriving (Eq)
+data Location = Location (String, Maybe Expression) deriving (Eq)
+data Literal = StringLiteral String
+             | IntLiteral Int
+             | CharLiteral Char
+             | BoolLiteral Bool
+             deriving (Eq)
+data Expression = BinOpExpression (String, Expression, Expression)
+                | LocationExpr Location
+                | LiteralExpr Literal
+                deriving (Eq)
+data AssignOp = AssignmentOp | AddAssignmentOp | SubtractAssignmentOp deriving (Eq)
+
+constructAssignmentStatement lhs op rhs =
+  case op of AssignmentOp -> Assignment (lhs, rhs)
+             AddAssignmentOp -> Assignment (lhs, BinOpExpression ("+", lhs, rhs))
+             SubtractAssignmentOp -> Assignment (lhs, BinOpExpression ("-", lhs, rhs))
 
 parseError :: [ScannedToken] -> Either String a
 parseError [] = Left "unexpected EOF"
