@@ -168,15 +168,14 @@ Statements_
 
 Statement
       : Location AssignOp Expression ';' { constructAssignmentStatement $1 $2 $3 }
+      | MethodCall_ ';'                  { MethodCallStatement $1 }
+      | return Expression ';'            { ReturnStatement $2 }
+      | continue ';'                     { ContinueStatement }
+      | break ';'                        { BreakStatement }
 {--
-| method_call ;
-| if ( expr ) block
-else block
+| if ( expr ) block else block
 | for ( id = expr , expr [, int_literal]) block
 | while ( expr ) block
-| return expr ;
-| break ;
-| continue ;
 --}
 
 Location
@@ -234,8 +233,10 @@ CondOp
       | "||" { "||" }
 
 MethodCall
-      : identifier '(' MethodCall_Expressions ')' { MethodCallExpression ($1, $3) }
-      | identifier '(' MethodCall_CalloutArgs ')' { MethodCallExpression ($1, $3) }
+      : MethodCall_ { MethodCallExpression $1 }
+MethodCall_
+      : identifier '(' MethodCall_Expressions ')' { ($1, $3) }
+      | identifier '(' MethodCall_CalloutArgs ')' { ($1, $3) }
 
 MethodCall_Expressions
       : MethodCall_Expressions_ { reverse $1 }
@@ -282,7 +283,12 @@ data Declaration = Callout String
 
 data Type = Type String deriving (Eq)
 data Argument = Argument (Type, String) deriving (Eq)
-data Statement = Assignment (Expression, Expression) deriving (Eq)
+data Statement = Assignment (Expression, Expression)
+               | MethodCallStatement MethodCall
+               | BreakStatement
+               | ContinueStatement
+               | ReturnStatement Expression
+               deriving (Eq)
 data Location = Location (String, Maybe Expression) deriving (Eq)
 data Literal = StringLiteral String
              | IntLiteral Int
@@ -295,12 +301,13 @@ data Expression = BinOpExpression (String, Expression, Expression)
                 | LengthExpression Expression
                 | LocationExpression Location
                 | LiteralExpression Literal
-                | MethodCallExpression (String, [CalloutArg])
+                | MethodCallExpression MethodCall
                 | CondExpression { condition :: Expression
                                  , consequent :: Expression
                                  , alternative :: Expression }
                 deriving (Eq)
 data AssignOp = AssignmentOp | AddAssignmentOp | SubtractAssignmentOp deriving (Eq)
+type MethodCall = (String, [CalloutArg]);
 data CalloutArg = CalloutExpression Expression
                 | CalloutStringLit String
                 deriving (Eq)
