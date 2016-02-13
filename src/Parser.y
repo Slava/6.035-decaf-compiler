@@ -86,6 +86,7 @@ import Scanner (ScannedToken(..), Token(..))
 %left '+' '-'
 %left '*' '/' '%'
 %left NEG
+%left NOT
 %right '?'
 %nonassoc '>' '<' ">=" "<="
 %nonassoc "==" "!="
@@ -205,7 +206,7 @@ Expression
       | Literal                     { LiteralExpression $1 }
       | Expression BinOp Expression { BinOpExpression ($2, $1, $3) }
       | '-' Expression %prec NEG    { NegExpression $2 }
-      | '!' Expression              { NotExpression $2 }
+      | '!' Expression %prec NOT    { NotExpression $2 }
       | '(' Expression ')'          { $2 }
       | '@' identifier              { LengthExpression (LocationExpression (Location ($2, Nothing))) }
       | MethodCall                  { $1 }
@@ -242,15 +243,7 @@ CondOp
 MethodCall
       : MethodCall_ { MethodCallExpression $1 }
 MethodCall_
-      : identifier '(' MethodCall_Expressions ')' { ($1, $3) }
-      | identifier '(' MethodCall_CalloutArgs ')' { ($1, $3) }
-
-MethodCall_Expressions
-      : MethodCall_Expressions_ { reverse $1 }
-      | {-- empty --}           { [] }
-MethodCall_Expressions_
-      : Expression                             { [CalloutExpression $1] }
-      | MethodCall_Expressions_ ',' Expression { (CalloutExpression $3) : $1 }
+      : identifier '(' MethodCall_CalloutArgs ')' { ($1, $3) }
 
 MethodCall_CalloutArgs
       : MethodCall_CalloutArgs_ { reverse $1 }
@@ -280,8 +273,9 @@ Literal
 {
 data Program = Program [Declaration] deriving (Eq)
 type Block = ([Declaration], [Statement])
+type Field = (String, Maybe Int)
 data Declaration = Callout String
-                 | Fields (Type, [String])
+                 | Fields (Type, [Field])
                  | Method { methodRetType :: Type
                           , methodName :: String
                           , methodArgs :: [Argument]
