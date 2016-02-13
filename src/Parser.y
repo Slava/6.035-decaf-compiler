@@ -180,7 +180,7 @@ else block
 --}
 
 Location
-      : Location_ { LocationExpr $1 }
+      : Location_ { LocationExpression $1 }
 
 Location_
       : identifier Location_sub { Location ($1, $2) }
@@ -196,12 +196,12 @@ AssignOp
 
 Expression
       : Location                    { $1 }
-      | Literal                     { LiteralExpr $1 }
+      | Literal                     { LiteralExpression $1 }
       | Expression BinOp Expression { BinOpExpression ($2, $1, $3) }
       | '-' Expression %prec NEG    { NegExpression $2 }
       | '!' Expression              { NotExpression $2 }
       | '(' Expression ')'          { $2 }
-      | '@' identifier              { LengthExpression (LocationExpr (Location ($2, Nothing))) }
+      | '@' identifier              { LengthExpression (LocationExpression (Location ($2, Nothing))) }
       | MethodCall                  { $1 }
       | Expression '?' Expression ':' Expression
                                     { CondExpression {condition=$1, consequent=$3, alternative=$5} }
@@ -293,8 +293,8 @@ data Expression = BinOpExpression (String, Expression, Expression)
                 | NegExpression Expression
                 | NotExpression Expression
                 | LengthExpression Expression
-                | LocationExpr Location
-                | LiteralExpr Literal
+                | LocationExpression Location
+                | LiteralExpression Literal
                 | MethodCallExpression (String, [CalloutArg])
                 | CondExpression { condition :: Expression
                                  , consequent :: Expression
