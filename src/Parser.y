@@ -174,6 +174,12 @@ Statement
       | while '(' Expression ')' Block   { LoopStatement {loopCondition=$3, loopBody=$5, loopInit=Nothing, loopIncr=Nothing} }
       | for '(' identifier '=' Expression ',' Expression LoopIncr ')' Block
         { LoopStatement {loopCondition=$7, loopBody=$10, loopInit=Just ($3, $5), loopIncr=$8} }
+      | if '(' Expression ')' Block OptElse
+        { IfStatement {ifCondition=$3, ifConsequentBody=$5, ifAlternativeBody=$6} }
+
+OptElse
+      : {-- empty --}    { ([], []) }
+      | else Block       { $2 }
 
 LoopIncr
       : {-- empty --}    { Nothing }
@@ -294,8 +300,8 @@ data Statement = Assignment (Expression, Expression)
                                , loopInit :: Maybe (String, Expression)
                                , loopIncr :: Maybe Int }
                | IfStatement { ifCondition :: Expression
-                             , ifConsequentBody :: [Statement]
-                             , ifAlternativeBody :: [Statement] }
+                             , ifConsequentBody :: Block
+                             , ifAlternativeBody :: Block }
                deriving (Eq)
 data Location = Location (String, Maybe Expression) deriving (Eq)
 data Literal = StringLiteral String
