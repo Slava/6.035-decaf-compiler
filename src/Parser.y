@@ -146,10 +146,11 @@ MethodRetType
       | TypeVoid_ { $1 }
 
 Arguments
-      : Arguments_ { reverse $1 }
+      : Arguments_    { reverse $1 }
+      | {-- empty --} { [] }
 
 Arguments_
-      : {-- empty --}           { [] }
+      : Argument                { [$1] }
       | Arguments_ ',' Argument { $3 : $1 }
 
 Argument
@@ -197,15 +198,13 @@ Expression
       : Location                    { $1 }
       | Literal                     { LiteralExpr $1 }
       | Expression BinOp Expression { BinOpExpression ($2, $1, $3) }
-{--
-method_call
-@ id
-expr bin_op expr
-- expr
-! expr
-( expr )
-expr ? expr : expr
---}
+      | '-' Expression %prec NEG    { NegExpression $2 }
+      | '!' Expression              { NotExpression $2 }
+      | '(' Expression ')'          { $2 }
+      | '@' identifier              { LengthExpression (LocationExpr (Location ($2, Nothing))) }
+      | MethodCall                  { $1 }
+      | Expression '?' Expression ':' Expression
+                                    { CondExpression {condition=$1, consequent=$3, alternative=$5} }
 
 BinOp
       : ArithOp { $1 }
@@ -233,6 +232,27 @@ EqOp
 CondOp
       : "&&" { "&&" }
       | "||" { "||" }
+
+MethodCall
+      : identifier '(' MethodCall_Expressions ')' { MethodCallExpression ($1, $3) }
+      | identifier '(' MethodCall_CalloutArgs ')' { MethodCallExpression ($1, $3) }
+
+MethodCall_Expressions
+      : MethodCall_Expressions_ { reverse $1 }
+      | {-- empty --}           { [] }
+MethodCall_Expressions_
+      : Expression                             { [CalloutExpression $1] }
+      | MethodCall_Expressions_ ',' Expression { (CalloutExpression $3) : $1 }
+
+MethodCall_CalloutArgs
+      : MethodCall_CalloutArgs_ { reverse $1 }
+      | {-- empty --}           { [] }
+MethodCall_CalloutArgs_
+      : MethodCall_CalloutArg                             { [$1] }
+      | MethodCall_CalloutArgs_ ',' MethodCall_CalloutArg { $3 : $1 }
+MethodCall_CalloutArg
+      : Expression     { CalloutExpression $1 }
+      | stringLiteral  { CalloutStringLit $1 }
 
 Type
       : int      { Type "int" }
@@ -270,10 +290,20 @@ data Literal = StringLiteral String
              | BoolLiteral Bool
              deriving (Eq)
 data Expression = BinOpExpression (String, Expression, Expression)
+                | NegExpression Expression
+                | NotExpression Expression
+                | LengthExpression Expression
                 | LocationExpr Location
                 | LiteralExpr Literal
+                | MethodCallExpression (String, [CalloutArg])
+                | CondExpression { condition :: Expression
+                                 , consequent :: Expression
+                                 , alternative :: Expression }
                 deriving (Eq)
 data AssignOp = AssignmentOp | AddAssignmentOp | SubtractAssignmentOp deriving (Eq)
+data CalloutArg = CalloutExpression Expression
+                | CalloutStringLit String
+                deriving (Eq)
 
 constructAssignmentStatement lhs op rhs =
   case op of AssignmentOp -> Assignment (lhs, rhs)
