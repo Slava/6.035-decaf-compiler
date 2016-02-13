@@ -134,11 +134,10 @@ MethodDecls_
 
 MethodDecl
       : MethodRetType identifier '(' Arguments ')' Block {
-              Method { retType = $1
-                     , name = $2
-                     , args = $4
-                     , vars = (fst $6)
-                     , body = (snd $6) }
+              Method { methodRetType = $1
+                     , methodName = $2
+                     , methodArgs = $4
+                     , methodBody = $6 }
         }
 
 MethodRetType
@@ -172,11 +171,13 @@ Statement
       | return Expression ';'            { ReturnStatement $2 }
       | continue ';'                     { ContinueStatement }
       | break ';'                        { BreakStatement }
-{--
-| if ( expr ) block else block
-| for ( id = expr , expr [, int_literal]) block
-| while ( expr ) block
---}
+      | while '(' Expression ')' Block   { LoopStatement {loopCondition=$3, loopBody=$5, loopInit=Nothing, loopIncr=Nothing} }
+      | for '(' identifier '=' Expression ',' Expression LoopIncr ')' Block
+        { LoopStatement {loopCondition=$7, loopBody=$10, loopInit=Just ($3, $5), loopIncr=$8} }
+
+LoopIncr
+      : {-- empty --}    { Nothing }
+      | ',' intLiteral   { Just ((read $2) :: Int) }
 
 Location
       : Location_ { LocationExpression $1 }
@@ -203,7 +204,7 @@ Expression
       | '@' identifier              { LengthExpression (LocationExpression (Location ($2, Nothing))) }
       | MethodCall                  { $1 }
       | Expression '?' Expression ':' Expression
-                                    { CondExpression {condition=$1, consequent=$3, alternative=$5} }
+                                    { CondExpression {condCondition=$1, condConsequent=$3, condAlternative=$5} }
 
 BinOp
       : ArithOp { $1 }
@@ -272,13 +273,13 @@ Literal
 ----------------------------------- Haskell -----------------------------------
 {
 data Program = Program [Declaration] deriving (Eq)
+type Block = ([Declaration], [Statement])
 data Declaration = Callout String
                  | Fields (Type, [String])
-                 | Method { retType :: Type
-                          , name :: String
-                          , args :: [Argument]
-                          , vars :: [Declaration]
-                          , body :: [Statement]}
+                 | Method { methodRetType :: Type
+                          , methodName :: String
+                          , methodArgs :: [Argument]
+                          , methodBody :: Block }
                  deriving (Eq)
 
 data Type = Type String deriving (Eq)
@@ -288,6 +289,13 @@ data Statement = Assignment (Expression, Expression)
                | BreakStatement
                | ContinueStatement
                | ReturnStatement Expression
+               | LoopStatement { loopCondition :: Expression
+                               , loopBody :: Block
+                               , loopInit :: Maybe (String, Expression)
+                               , loopIncr :: Maybe Int }
+               | IfStatement { ifCondition :: Expression
+                             , ifConsequentBody :: [Statement]
+                             , ifAlternativeBody :: [Statement] }
                deriving (Eq)
 data Location = Location (String, Maybe Expression) deriving (Eq)
 data Literal = StringLiteral String
@@ -302,9 +310,9 @@ data Expression = BinOpExpression (String, Expression, Expression)
                 | LocationExpression Location
                 | LiteralExpression Literal
                 | MethodCallExpression MethodCall
-                | CondExpression { condition :: Expression
-                                 , consequent :: Expression
-                                 , alternative :: Expression }
+                | CondExpression { condCondition :: Expression
+                                 , condConsequent :: Expression
+                                 , condAlternative :: Expression }
                 deriving (Eq)
 data AssignOp = AssignmentOp | AddAssignmentOp | SubtractAssignmentOp deriving (Eq)
 type MethodCall = (String, [CalloutArg]);
