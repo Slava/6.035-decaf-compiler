@@ -82,6 +82,14 @@ import Scanner (ScannedToken(..), Token(..))
   "+="       { ScannedToken _ _ PlusEq }
 
 
+%right "+=" "-=" '='
+%left '+' '-'
+%left '*' '/' '%'
+%left NEG
+%right '?'
+%nonassoc '>' '<' ">=" "<="
+%nonassoc "==" "!="
+%nonassoc "&&" "||"
 %% -------------------------------- Grammar -----------------------------------
 
 Program
@@ -159,6 +167,16 @@ Statements_
 
 Statement
       : Location AssignOp Expression ';' { constructAssignmentStatement $1 $2 $3 }
+{--
+| method_call ;
+| if ( expr ) block
+else block
+| for ( id = expr , expr [, int_literal]) block
+| while ( expr ) block
+| return expr ;
+| break ;
+| continue ;
+--}
 
 Location
       : Location_ { LocationExpr $1 }
@@ -176,8 +194,45 @@ AssignOp
       | "-=" { SubtractAssignmentOp }
 
 Expression
-      : Location       { $1 }
-      | Literal        { LiteralExpr $1 }
+      : Location                    { $1 }
+      | Literal                     { LiteralExpr $1 }
+      | Expression BinOp Expression { BinOpExpression ($2, $1, $3) }
+{--
+method_call
+@ id
+expr bin_op expr
+- expr
+! expr
+( expr )
+expr ? expr : expr
+--}
+
+BinOp
+      : ArithOp { $1 }
+      | RelOp   { $1 }
+      | EqOp    { $1 }
+      | CondOp  { $1 }
+
+ArithOp
+      : '+' { "+" }
+      | '-' { "-" }
+      | '*' { "*" }
+      | '/' { "/" }
+      | '%' { "%" }
+
+RelOp
+      : '>'  { ">" }
+      | '<'  { "<" }
+      | ">=" { ">=" }
+      | "<=" { "<=" }
+
+EqOp
+      : "==" { "==" }
+      | "!=" { "!=" }
+
+CondOp
+      : "&&" { "&&" }
+      | "||" { "||" }
 
 Type
       : int      { Type "int" }
