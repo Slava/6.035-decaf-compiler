@@ -94,56 +94,47 @@ import Scanner (ScannedToken(..), Token(..))
 %% -------------------------------- Grammar -----------------------------------
 
 Program
-      : CalloutDecls FieldDecls MethodDecls { Program ($1 ++ $2 ++ $3) }
+      : CalloutDecls { Program $1 }
 
 CalloutDecls
-      : CalloutDecls_ { reverse $1 }
-
-CalloutDecls_
-      : {-- empty --}             { [] }
-      | CalloutDecls_ CalloutDecl { $2 : $1 }
+      : CalloutDecl CalloutDecls { $1 : $2 }
+      | FieldDecls { $1 }
 
 CalloutDecl
       : callout identifier ';' { Callout $2 }
 
 FieldDecls
-      : FieldDecls_ { reverse $1 }
-
-FieldDecls_
-      : {-- empty --}         { [] }
-      | FieldDecls_ FieldDecl { $2 : $1 }
+      : FieldDecl FieldDecls { $1 : $2 }
+      | MethodDecls { $1 }
 
 FieldDecl
-      : Type FieldDecl_Fields ';' { Fields ($1, $2) }
+      : Type Fields ';' { Fields ($1, $2) }
 
-FieldDecl_Fields
-      : Fields_ { reverse $1 }
-
-Fields_
+Fields
       : Field_         { [$1] }
-      | Fields_ ',' Field_ { $3 : $1 }
+      | Fields ',' Field_ { $3 : $1 }
 
 Field_
-      : identifier { $1 }
+      : identifier { ($1, Nothing) }
+      | identifier '[' intLiteral ']' { ($1, Just ((read $3) :: Int)) }
 
 MethodDecls
-      : MethodDecls_ { reverse $1 }
-
-MethodDecls_
-      : {-- empty --}           { [] }
-      | MethodDecls_ MethodDecl { $2 : $1 }
+      : MethodDecl MethodDecls { $1 : $2 }
+      | {-- empty --}           { [] }
 
 MethodDecl
-      : MethodRetType identifier '(' Arguments ')' Block {
+      : Type identifier '(' Arguments ')' Block {
               Method { methodRetType = $1
                      , methodName = $2
                      , methodArgs = $4
                      , methodBody = $6 }
         }
-
-MethodRetType
-      : Type      { $1 }
-      | TypeVoid_ { $1 }
+      | void identifier '(' Arguments ')' Block {
+              Method { methodRetType = (Type "void")
+                     , methodName = $2
+                     , methodArgs = $4
+                     , methodBody = $6 }
+        }
 
 Arguments
       : Arguments_    { reverse $1 }
@@ -258,9 +249,6 @@ MethodCall_CalloutArg
 Type
       : int      { Type "int" }
       | boolean  { Type "boolean" }
-
-TypeVoid_
-      : void     { Type "void" }
 
 Literal
       : intLiteral     { Parser.IntLiteral (read $1) }
