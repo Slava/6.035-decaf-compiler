@@ -38,7 +38,7 @@ tokens :-
           { \posn s -> scannedToken posn $ Keyword s }
   true | false
           { \posn s -> scannedToken posn $ BooleanLiteral s }
-  @hex | @number /($white|$printable # $alpha)
+  @hex | @number
           { \posn s -> scannedToken posn $ IntLiteral s }
   \" @char* \"
           { \posn s -> scannedToken posn $ StringLiteral s }
