@@ -49,6 +49,10 @@ for test_file in tests/tests/scanner/input/*; do
   RunTest "./run.sh -t scan" $test_file tests/tests/scanner/output/`basename $test_file`.out
 done
 
+for test_file in tests/tests/scanner-hidden/input/*; do
+  RunTest "./run.sh -t scan" $test_file tests/tests/scanner-hidden/output/`basename $test_file`.out
+done
+
 
 echo
 echo
