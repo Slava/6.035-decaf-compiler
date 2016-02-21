@@ -10,7 +10,7 @@ runscanner() {
 fail=0
 
 for file in `dirname $0`/input/*; do
-  output=`tempfile`
+  output=`mktemp XXXXX`
   runscanner $file > $output 2>&1;
   if ! diff -u $output `dirname $0`/output/`basename $file`.out; then
     let "fail += 1"
