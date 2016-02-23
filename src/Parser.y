@@ -259,7 +259,7 @@ Literal
 
 ----------------------------------- Haskell -----------------------------------
 {
-data Program = Program [Declaration] deriving (Eq)
+data Program = Program [Declaration] deriving (Eq, Show)
 type Block = ([Declaration], [Statement])
 type Field = (String, Maybe Int)
 data Declaration = Callout String
@@ -268,10 +268,10 @@ data Declaration = Callout String
                           , methodName :: String
                           , methodArgs :: [Argument]
                           , methodBody :: Block }
-                 deriving (Eq)
+                 deriving (Eq, Show)
 
-data Type = Type String deriving (Eq)
-data Argument = Argument (Type, String) deriving (Eq)
+data Type = Type String deriving (Eq, Show)
+data Argument = Argument (Type, String) deriving (Eq, Show)
 data Statement = Assignment (Expression, Expression)
                | MethodCallStatement MethodCall
                | BreakStatement
@@ -284,13 +284,13 @@ data Statement = Assignment (Expression, Expression)
                | IfStatement { ifCondition :: Expression
                              , ifConsequentBody :: Block
                              , ifAlternativeBody :: Block }
-               deriving (Eq)
-data Location = Location (String, Maybe Expression) deriving (Eq)
+               deriving (Eq, Show)
+data Location = Location (String, Maybe Expression) deriving (Eq, Show)
 data Literal = StringLiteral String
              | IntLiteral Int
              | CharLiteral Char
              | BoolLiteral Bool
-             deriving (Eq)
+             deriving (Eq, Show)
 data Expression = BinOpExpression (String, Expression, Expression)
                 | NegExpression Expression
                 | NotExpression Expression
@@ -301,12 +301,12 @@ data Expression = BinOpExpression (String, Expression, Expression)
                 | CondExpression { condCondition :: Expression
                                  , condConsequent :: Expression
                                  , condAlternative :: Expression }
-                deriving (Eq)
-data AssignOp = AssignmentOp | AddAssignmentOp | SubtractAssignmentOp deriving (Eq)
+                deriving (Eq, Show)
+data AssignOp = AssignmentOp | AddAssignmentOp | SubtractAssignmentOp deriving (Eq, Show)
 type MethodCall = (String, [CalloutArg]);
 data CalloutArg = CalloutExpression Expression
                 | CalloutStringLit String
-                deriving (Eq)
+                deriving (Eq, Show)
 
 constructAssignmentStatement lhs op rhs =
   case op of AssignmentOp -> Assignment (lhs, rhs)
