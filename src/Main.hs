@@ -52,7 +52,8 @@ main = do
   case result of
     -- Part III: Write output
     Left errorMessage -> fatal errorMessage
-    Right actions -> sequence_ actions
+    Right actions -> do
+      sequence_ actions
   where hoistEither = ExceptT . return
 
 readFile :: FilePath -> ExceptT String IO String
@@ -117,7 +118,8 @@ printAst configuration input = do
   -- Otherwise, attempt a parse.
   case (Parser.parse tokens) of
     Left  a -> Left a
-    Right token -> Left (show token)
+    Right token -> Right [ printf "%s\n" (show token) ]
+{- (show token) -}
 
 parse :: Configuration -> String -> Either String [IO ()]
 parse configuration input = do
