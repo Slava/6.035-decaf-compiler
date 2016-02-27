@@ -32,6 +32,8 @@ import qualified Configuration
 import qualified Parser
 import qualified Scanner
 
+import Text.JSON (showJSON)
+
 
 ------------------------ Impure code: Fun with ExceptT ------------------------
 
@@ -130,7 +132,7 @@ printAst configuration input = do
   -- Otherwise, attempt a parse.
   case (Parser.parse tokens) of
     Left  a -> Left a
-    Right token -> Right [ printf "%s\n" (show token) ]
+    Right token -> Right [ printf "%s\n" (show $ token) ]
 {- (show token) -}
 
 parse :: Configuration -> String -> Either String [IO ()]
