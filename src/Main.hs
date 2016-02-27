@@ -11,7 +11,6 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  See the X11 license for more details. -}
 module Main where
 
-import ParseTypes
 import Prelude hiding (readFile)
 import qualified Prelude
 
@@ -32,8 +31,7 @@ import Configuration (Configuration, CompilerStage(..))
 import qualified Configuration
 import qualified Parser
 import qualified Scanner
-
-import Data.Map
+import qualified SemanticChecker
 
 import Data.Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -117,17 +115,6 @@ scan configuration input =
         openOutputHandle = maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
 
 
-data Data = Data {
-	dName :: String,
-        dType :: ParseTypes.Type
-} deriving (Eq, Show) 
- 
-data Module = Module {
-	parent :: Maybe Module,
-	lookup :: Map String Data
-} deriving (Eq, Show)
-
-
 semanticCheck :: Configuration -> String -> Either String [IO ()]
 semanticCheck configuration input = do
   let (errors, tokens) = partitionEithers $ Scanner.scan input
@@ -136,8 +123,9 @@ semanticCheck configuration input = do
   -- Otherwise, attempt a parse.
   case (Parser.parse tokens) of
     Left  a -> Left a
-    Right token -> Right [ printf "%s\n" (show token) ]
-{- (show token) -}
+    Right ast -> case (SemanticChecker.getIR ast) of
+      Left a -> Left a
+      Right ir -> Right [printf "%s\n" (show ir)]
 
 printAst :: Configuration -> String -> Either String [IO ()]
 printAst configuration input = do
@@ -147,8 +135,7 @@ printAst configuration input = do
   -- Otherwise, attempt a parse.
   case (Parser.parse tokens) of
     Left  a -> Left a
-    Right token -> Right [ Data.ByteString.Lazy.putStrLn (encodePretty $ token) ]
-{- (show token) -}
+    Right ast -> Right [ Data.ByteString.Lazy.putStrLn (encodePretty $ ast) ]
 
 parse :: Configuration -> String -> Either String [IO ()]
 parse configuration input = do
