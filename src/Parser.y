@@ -18,6 +18,8 @@ import Data.List (reverse)
 
 import Scanner (ScannedToken(..), Token(..))
 
+import ParseTypes
+
 }
 
 
@@ -251,62 +253,14 @@ Type
       | boolean  { Type "boolean" }
 
 Literal
-      : intLiteral     { Parser.IntLiteral (read $1) }
-      | charLiteral    { Parser.CharLiteral (head $1) }
+      : intLiteral     { ParseTypes.IntLiteral (read $1) }
+      | charLiteral    { ParseTypes.CharLiteral (head $1) }
       | booleanLiteral {
-          Parser.BoolLiteral (if $1 == "true" then True else False)
+          ParseTypes.BoolLiteral (if $1 == "true" then True else False)
           }
 
 ----------------------------------- Haskell -----------------------------------
 {
-data Program = Program [Declaration] deriving (Eq, Show)
-type Block = ([Declaration], [Statement])
-type Field = (String, Maybe Int)
-data Declaration = Callout String
-                 | Fields (Type, [Field])
-                 | Method { methodRetType :: Type
-                          , methodName :: String
-                          , methodArgs :: [Argument]
-                          , methodBody :: Block }
-                 deriving (Eq, Show)
-
-data Type = Type String deriving (Eq, Show)
-data Argument = Argument (Type, String) deriving (Eq, Show)
-data Statement = Assignment (Expression, Expression)
-               | MethodCallStatement MethodCall
-               | BreakStatement
-               | ContinueStatement
-               | ReturnStatement Expression
-               | LoopStatement { loopCondition :: Expression
-                               , loopBody :: Block
-                               , loopInit :: Maybe (String, Expression)
-                               , loopIncr :: Maybe Int }
-               | IfStatement { ifCondition :: Expression
-                             , ifConsequentBody :: Block
-                             , ifAlternativeBody :: Block }
-               deriving (Eq, Show)
-data Location = Location (String, Maybe Expression) deriving (Eq, Show)
-data Literal = StringLiteral String
-             | IntLiteral Int
-             | CharLiteral Char
-             | BoolLiteral Bool
-             deriving (Eq, Show)
-data Expression = BinOpExpression (String, Expression, Expression)
-                | NegExpression Expression
-                | NotExpression Expression
-                | LengthExpression Expression
-                | LocationExpression Location
-                | LiteralExpression Literal
-                | MethodCallExpression MethodCall
-                | CondExpression { condCondition :: Expression
-                                 , condConsequent :: Expression
-                                 , condAlternative :: Expression }
-                deriving (Eq, Show)
-data AssignOp = AssignmentOp | AddAssignmentOp | SubtractAssignmentOp deriving (Eq, Show)
-type MethodCall = (String, [CalloutArg]);
-data CalloutArg = CalloutExpression Expression
-                | CalloutStringLit String
-                deriving (Eq, Show)
 
 constructAssignmentStatement lhs op rhs =
   case op of AssignmentOp -> Assignment (lhs, rhs)

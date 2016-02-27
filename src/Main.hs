@@ -11,6 +11,7 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  See the X11 license for more details. -}
 module Main where
 
+import ParseTypes
 import Prelude hiding (readFile)
 import qualified Prelude
 
@@ -32,8 +33,11 @@ import qualified Configuration
 import qualified Parser
 import qualified Scanner
 
-import Text.JSON (showJSON)
+import qualified Data.Map as HashMap
 
+import Data.Aeson
+import Data.Aeson.Encode.Pretty (encodePretty)
+import qualified Data.ByteString.Lazy (putStrLn)
 
 ------------------------ Impure code: Fun with ExceptT ------------------------
 
@@ -67,7 +71,6 @@ fatal message = do
   hPutStrLn stderr $ printf "%s: %s" progName message
   System.Exit.exitFailure
 
-
 ---------------------------- Pure code: Processing ----------------------------
 
 {- Since our compiler only handles single files, the 'Configuration' struct
@@ -78,7 +81,7 @@ parser won't contain the file name--the file name has to get added in this
 function. -}
 mungeErrorMessage :: Configuration -> Either String a -> Either String a
 mungeErrorMessage configuration =
-  ifLeft ((last (splitOn "/" (Configuration.input configuration)) ++ " ")++)
+  ifLeft ((Prelude.last (Data.List.Split.splitOn "/" (Configuration.input configuration)) ++ " ")++)
   where ifLeft f (Left v) = Left $ f v
         ifLeft _ (Right a) = Right a
 
@@ -98,8 +101,8 @@ scan :: Configuration -> String -> Either String [IO ()]
 scan configuration input =
   let tokensAndErrors =
         Scanner.scan input |>
-        map (mungeErrorMessage configuration) |>
-        map Scanner.formatTokenOrError
+        Prelude.map (mungeErrorMessage configuration) |>
+        Prelude.map Scanner.formatTokenOrError
   in
   {- We have to interleave output to standard error (for errors) and standard
   output or a file (for output), so we need to actually build an appropriate
@@ -112,6 +115,12 @@ scan configuration input =
           ]
   where v |> f = f v            -- like a Unix pipeline, but pure
         openOutputHandle = maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
+
+
+{- data Data = String Parser.Type deriving (Eq, Show) -}
+ 
+{- data Module = Maybe Module HashMap deriving (Eq, Show) -}
+
 
 semanticCheck :: Configuration -> String -> Either String [IO ()]
 semanticCheck configuration input = do
@@ -132,7 +141,7 @@ printAst configuration input = do
   -- Otherwise, attempt a parse.
   case (Parser.parse tokens) of
     Left  a -> Left a
-    Right token -> Right [ printf "%s\n" (show $ token) ]
+    Right token -> Right [ Data.ByteString.Lazy.putStrLn (encodePretty $ token) ]
 {- (show token) -}
 
 parse :: Configuration -> String -> Either String [IO ()]
