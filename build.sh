@@ -19,14 +19,15 @@ function have {
 }
 
 cd "$TOP"
-eval $(attach -Padd -b -f ghc)
-
+#eval $(attach -Padd -b -f ghc)
+echo `which ghc`
 if [[ ! -d .cabal-sandbox ]]; then
     # No Cabal sandbox yet.  Set one up.
     cabal sandbox init
 fi
 
 PATH="$TOP"/.cabal-sandbox/bin:"$PATH"
+echo `which ghc`
 
 for package in alex happy; do
     if ! have $package; then

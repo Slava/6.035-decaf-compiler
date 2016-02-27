@@ -3,18 +3,29 @@ module SemanticChecker where
 import ParseTypes
 import Data.Map
 
-data Data = Var { vName :: String, vType :: ParseTypes.Type }
-          | Method { mName :: String
-                   , mArgs :: [(String, ParseTypes.Type)]
-                   , mRetType :: ParseTypes.Type }
-          | Callout String
-          deriving (Eq, Show)
+data DataType = DBool 
+              | DInt
+              | DArray DataType
+              | DFunction DataType [DataType]
+                deriving (Eq, Show);
+
+data Data = Data {
+	vName :: String,
+        vType :: DataType
+} deriving (Eq, Show)
 
 data Module = Module {
   parent :: Maybe Module,
   lookup :: Map String Data
 } deriving (Eq, Show)
 
-getIR :: ParseTypes.Program -> Either String ParseTypes.Program
-getIR ast =
-  Right ast
+data Dummy = Dummy deriving(Eq, Show)
+
+semanticVerify :: Program -> Module -> [Either Dummy IO()] -> (Module, [Either Dummy IO()])
+
+semanticVerify (Program p) (Module m ) = 
+   foldl (\acc x -> semanticVerify x (fst acc) (snd acc) ) (m,[]) p
+
+semanticVerify :: Declaration -> Module -> [Either Dummy IO()] -> (Module, [Either Dummy IO()])
+semanticVerify (Declaration p) (Module m ) = (m, [printf "saw %s\n" (show p) ])
+
