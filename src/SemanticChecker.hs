@@ -1,7 +1,8 @@
 module SemanticChecker where
 
+import Text.Printf (printf)
 import ParseTypes
-import Data.Map
+import qualified Data.Map
 
 data DataType = DBool 
               | DInt
@@ -16,16 +17,15 @@ data Data = Data {
 
 data Module = Module {
   parent :: Maybe Module,
-  lookup :: Map String Data
+  lookup :: Data.Map.Map String Data
 } deriving (Eq, Show)
 
 data Dummy = Dummy deriving(Eq, Show)
 
-semanticVerify :: Program -> Module -> [Either Dummy IO()] -> (Module, [Either Dummy IO()])
+semanticVerify :: a -> Module -> [Either Dummy IO()] -> (Module, [Either Dummy IO()])
 
 semanticVerify (Program p) (Module m ) = 
    foldl (\acc x -> semanticVerify x (fst acc) (snd acc) ) (m,[]) p
 
-semanticVerify :: Declaration -> Module -> [Either Dummy IO()] -> (Module, [Either Dummy IO()])
 semanticVerify (Declaration p) (Module m ) = (m, [printf "saw %s\n" (show p) ])
 
