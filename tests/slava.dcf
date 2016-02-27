@@ -1,14 +1,4 @@
-boolean Yes() {
-  return (true);
-}
-
 void main() {
-  int x; int y;
-  x=1;
-  y = 2;
-  if(x < y) {
-    int z;
-    z = 5;
-  }
-  Yes();
+  boolean x;
+  x = false || false && !true || true && true == true || false;
 }

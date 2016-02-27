@@ -31,7 +31,6 @@ import Scanner (ScannedToken(..), Token(..))
 
 %token
   -- keywords --
-  class      { ScannedToken _ _ (Keyword "class") }
   boolean    { ScannedToken _ _ (Keyword "boolean") }
   break      { ScannedToken _ _ (Keyword "break") }
   callout    { ScannedToken _ _ (Keyword "callout") }
@@ -81,16 +80,18 @@ import Scanner (ScannedToken(..), Token(..))
   "-="       { ScannedToken _ _ MinusEq }
   "+="       { ScannedToken _ _ PlusEq }
 
-
-%right "+=" "-=" '='
+%right '?' ':'
+%left "||"
+%left "&&"
+%left "==" "!="
+%left '<' "<=" ">=" '>'
+%nonassoc "==" "!="
+%nonassoc '>' '<' ">=" "<="
 %left '+' '-'
 %left '*' '/' '%'
-%left NEG
-%left NOT
-%right '?'
-%nonassoc '>' '<' ">=" "<="
-%nonassoc "==" "!="
-%nonassoc "&&" "||"
+%right NOT
+%right NEG
+%right '@'
 %% -------------------------------- Grammar -----------------------------------
 
 Program
