@@ -88,6 +88,7 @@ process configuration input =
   case Configuration.target configuration of
     Scan -> scan configuration input
     Parse -> parse configuration input
+    SemanticCheck -> semanticCheck configuration input
     AST -> printAst configuration input
     phase -> Left $ show phase ++ " not implemented\n"
 
@@ -109,6 +110,17 @@ scan configuration input =
           ]
   where v |> f = f v            -- like a Unix pipeline, but pure
         openOutputHandle = maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
+
+semanticCheck :: Configuration -> String -> Either String [IO ()]
+semanticCheck configuration input = do
+  let (errors, tokens) = partitionEithers $ Scanner.scan input
+  -- If errors occurred, bail out.
+  mapM_ (mungeErrorMessage configuration . Left) errors
+  -- Otherwise, attempt a parse.
+  case (Parser.parse tokens) of
+    Left  a -> Left a
+    Right token -> Right [ printf "%s\n" (show token) ]
+{- (show token) -}
 
 printAst :: Configuration -> String -> Either String [IO ()]
 printAst configuration input = do

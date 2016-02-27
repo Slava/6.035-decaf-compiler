@@ -34,6 +34,7 @@ defaultConfiguration = Configuration { input = undefined
 data CompilerStage = Scan
                    | Parse
                    | AST
+                   | SemanticCheck
                    | Inter
                    | Assembly
                    deriving (Eq, Ord)
@@ -41,6 +42,7 @@ instance Show CompilerStage where
   show Scan  = "scan"
   show Parse = "parse"
   show AST   = "ast"
+  show SemanticCheck = "semanticCheck"
   show Inter = "inter"
   show Assembly = "assembly"
 
@@ -48,6 +50,7 @@ instance Read CompilerStage where
   readsPrec _ "scan" = [(Scan, "")]
   readsPrec _ "parse" = [(Parse, "")]
   readsPrec _ "ast"   = [(AST, "")]
+  readsPrec _ "semanticCheck" = [(SemanticCheck, "")]
   readsPrec _ "inter" = [(Inter, "")]
   readsPrec _ "assembly" = [(Assembly, "")]
   readsPrec _ _ = []
