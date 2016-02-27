@@ -31,12 +31,17 @@ executable decafc
                      , Configuration.Types
                      , Parser
                      , Scanner
+                     , ParseTypes
   ghc-options:         -Wall -O3
   build-depends:       base >=4.8
                      , array ==0.5.*
                      , split ==0.2.*
                      , transformers ==0.4.*
-                     , json
+                     , aeson
+                     , aeson-pretty
+                     , containers
+                     , bytestring
+                     , text
   build-tools:         alex >=3.0.2
                      , happy
 
