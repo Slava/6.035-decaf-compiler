@@ -197,7 +197,19 @@ AssignOp
 Expression
       : Location                    { $1 }
       | Literal                     { LiteralExpression $1 }
-      | Expression BinOp Expression { BinOpExpression ($2, $1, $3) }
+      | Expression '+' Expression { BinOpExpression ("+", $1, $3) }
+      | Expression '-' Expression { BinOpExpression ("-", $1, $3) }
+      | Expression '/' Expression { BinOpExpression ("/", $1, $3) }
+      | Expression '*' Expression { BinOpExpression ("*", $1, $3) }
+      | Expression '%' Expression { BinOpExpression ("%", $1, $3) }
+      | Expression '>' Expression { BinOpExpression (">", $1, $3) }
+      | Expression '<' Expression { BinOpExpression ("<", $1, $3) }
+      | Expression ">=" Expression { BinOpExpression (">=", $1, $3) }
+      | Expression "<=" Expression { BinOpExpression ("<=", $1, $3) }
+      | Expression "==" Expression { BinOpExpression ("==", $1, $3) }
+      | Expression "!=" Expression { BinOpExpression ("!=", $1, $3) }
+      | Expression "&&" Expression { BinOpExpression ("&&", $1, $3) }
+      | Expression "||" Expression { BinOpExpression ("||", $1, $3) }
       | '-' Expression %prec NEG    { NegExpression $2 }
       | '!' Expression %prec NOT    { NotExpression $2 }
       | '(' Expression ')'          { $2 }
@@ -205,33 +217,6 @@ Expression
       | MethodCall                  { $1 }
       | Expression '?' Expression ':' Expression
                                     { CondExpression {condCondition=$1, condConsequent=$3, condAlternative=$5} }
-
-BinOp
-      : ArithOp { $1 }
-      | RelOp   { $1 }
-      | EqOp    { $1 }
-      | CondOp  { $1 }
-
-ArithOp
-      : '+' { "+" }
-      | '-' { "-" }
-      | '*' { "*" }
-      | '/' { "/" }
-      | '%' { "%" }
-
-RelOp
-      : '>'  { ">" }
-      | '<'  { "<" }
-      | ">=" { ">=" }
-      | "<=" { "<=" }
-
-EqOp
-      : "==" { "==" }
-      | "!=" { "!=" }
-
-CondOp
-      : "&&" { "&&" }
-      | "||" { "||" }
 
 MethodCall
       : MethodCall_ { MethodCallExpression $1 }
