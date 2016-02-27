@@ -33,6 +33,9 @@ import qualified Parser
 import qualified Scanner
 import qualified SemanticChecker
 
+
+import qualified Data.Map
+
 import Data.Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy (putStrLn)
@@ -123,9 +126,10 @@ semanticCheck configuration input = do
   -- Otherwise, attempt a parse.
   case (Parser.parse tokens) of
     Left  a -> Left a
-    Right ast -> case (SemanticChecker.getIR ast) of
-      Left a -> Left a
-      Right ir -> Right [printf "%s\n" (show ir)]
+    Right ast -> do
+      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) ) []
+      let (good, ios) = partitionEithers $ asts
+      Right ios
 
 printAst :: Configuration -> String -> Either String [IO ()]
 printAst configuration input = do

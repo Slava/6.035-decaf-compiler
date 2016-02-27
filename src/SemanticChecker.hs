@@ -22,10 +22,16 @@ data Module = Module {
 
 data Dummy = Dummy deriving(Eq, Show)
 
-semanticVerify :: a -> Module -> [Either Dummy IO()] -> (Module, [Either Dummy IO()])
+semanticVerifyProgram :: Program -> Module -> [Either Dummy (IO())] -> (Module, [Either Dummy (IO())]) 
+semanticVerifyDeclaration :: Declaration -> Module -> [Either Dummy (IO())] -> (Module, [Either Dummy (IO())]) 
 
-semanticVerify (Program p) (Module m ) = 
-   foldl (\acc x -> semanticVerify x (fst acc) (snd acc) ) (m,[]) p
+semanticVerifyProgram (Program p) m ar= 
+   foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc) ) (m,ar) p
 
-semanticVerify (Declaration p) (Module m ) = (m, [printf "saw %s\n" (show p) ])
+
+semanticVerifyDeclaration (Callout name) m ar = (m, [Right $ printf "saw %s\n" (show $ Callout name) ])
+
+semanticVerifyDeclaration (Fields tup ) m ar = (m, [Right $ printf "saw %s\n" (show $ Fields tup ) ])
+
+semanticVerifyDeclaration (Method rt name args body) m ar = (m, [Right $ printf "saw %s\n" (show $ Method rt name args body) ])
 
