@@ -33,7 +33,7 @@ import qualified Configuration
 import qualified Parser
 import qualified Scanner
 
-import qualified Data.Map as HashMap
+import Data.Map
 
 import Data.Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -117,9 +117,15 @@ scan configuration input =
         openOutputHandle = maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
 
 
-{- data Data = String Parser.Type deriving (Eq, Show) -}
+data Data = Data {
+	dName :: String,
+        dType :: ParseTypes.Type
+} deriving (Eq, Show) 
  
-{- data Module = Maybe Module HashMap deriving (Eq, Show) -}
+data Module = Module {
+	parent :: Maybe Module,
+	lookup :: Map String Data
+} deriving (Eq, Show)
 
 
 semanticCheck :: Configuration -> String -> Either String [IO ()]

@@ -42,6 +42,7 @@ executable decafc
                      , containers
                      , bytestring
                      , text
+                     , hashmap
   build-tools:         alex >=3.0.2
                      , happy
 
