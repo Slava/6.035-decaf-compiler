@@ -13,7 +13,9 @@ data Program = Program [Declaration] deriving (Eq, Show, Generic)
 
 instance ToJSON Program where
 
-type Block = ([Declaration], [Statement])
+data Block = Block ([Declaration], [Statement]) deriving (Eq, Show, Generic)
+
+instance ToJSON Block where
 
 type Field = (String, Maybe Int)
 
@@ -88,4 +90,3 @@ data CalloutArg = CalloutExpression Expression
                 deriving (Eq, Show, Generic)
 
 instance ToJSON CalloutArg where
-

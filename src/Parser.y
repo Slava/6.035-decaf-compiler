@@ -151,7 +151,7 @@ Argument
       : Type identifier { Argument ($1, $2) }
 
 Block
-      : '{' FieldDecls Statements '}' { ($2, $3) }
+      : '{' FieldDecls Statements '}' { Block ($2, $3) }
 
 Statements
       : Statements_ { reverse $1 }
@@ -173,7 +173,7 @@ Statement
         { IfStatement {ifCondition=$3, ifConsequentBody=$5, ifAlternativeBody=$6} }
 
 OptElse
-      : {-- empty --}    { ([], []) }
+      : {-- empty --}    { Block ([], []) }
       | else Block       { $2 }
 
 LoopIncr
