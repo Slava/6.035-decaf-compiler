@@ -129,7 +129,7 @@ semanticCheck configuration input = do
     Right ast -> do
       let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) ) []
       let (good, ios) = partitionEithers $ asts
-      Right ios
+      Right (ios ++ [ printf "test\n" ])
 
 printAst :: Configuration -> String -> Either String [IO ()]
 printAst configuration input = do
