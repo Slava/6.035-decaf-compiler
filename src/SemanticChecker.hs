@@ -158,14 +158,11 @@ semanticVerifyExpression (MethodCallExpression methodCall) m ar = (m, ar ++ [Rig
 
 semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ CondExpression cCond cTrue cFalse)], InvalidType)
 
-semanticVerifyExpression (LocationExpression loc) m ar = (m, ar, InvalidType)
---  case (moduleLookup m loc) of
---    Nothing -> (m, ar ++ [Right $ printf "Variable %s not in scope\n" loc], InvalidType)
---    Just a  -> (m, ar ++ [Right $ printf "Variable %s IN scope as %s\n" loc (show a)], a)
+semanticVerifyExpression (LocationExpression loc) m ar =
+  case (moduleLookup m loc) of
+    Nothing -> (m, ar ++ [Right $ printf "Variable %s not in scope\n" loc], InvalidType)
+    Just a  -> (m, ar ++ [Right $ printf "Variable %s IN scope as %s\n" loc (show a)], a)
 
-semanticVerifyExpression (LookupExpression loc expr ) m ar = (m, ar, InvalidType)
-
-{-
 semanticVerifyExpression (LookupExpression loc expr ) m ar = 
   let (m2, ar2, ty2) = semanticVerifyExpression (LocationExpression loc) m ar
       (m3, ar3, ty3) = semanticVerifyExpression expr m ar 
@@ -174,6 +171,5 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
          x -> [Right $ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2) ]
       ar5 = if ty2 == DInt then [Right $ printf "Type of array lookup expression correct\n" ] else [Right $ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2) ] in
         (m3, ar5, arrayInnerType ty2)
--}
 
 
