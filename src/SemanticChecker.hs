@@ -1,3 +1,5 @@
+{-# OPTIONS -Wall #-} 
+
 module SemanticChecker where
 import GHC.Generics
 
@@ -14,7 +16,7 @@ import qualified Data.ByteString.Lazy (putStrLn)
 data DataType = DCallout
               | DBool
               | DInt
-              | DArray DataType Int {- Type and bounds -}
+              | DArray DataType (Maybe Int) {- Type and bounds -}
               | DFunction DataType [DataType]
               | DVoid
               | InvalidType
@@ -48,8 +50,17 @@ makeChild m = Module (Just m) HashMap.empty
 stringToType :: Type -> DataType
 stringToType (Type n) = if n == "int" then DInt else if n == "boolean" then DBool else InvalidType
 
+arrayInnerType :: DataType -> DataType
+arrayInnerType (DArray n _) = n
+arrayInnerType DCallout = InvalidType
+arrayInnerType DBool = InvalidType
+arrayInnerType DInt = InvalidType
+arrayInnerType (DFunction a b) = InvalidType
+arrayInnerType DVoid = InvalidType
+arrayInnerType InvalidType = InvalidType
+
 createArrayType :: DataType -> Maybe Int -> DataType
-createArrayType typ (Just size) = DArray typ size
+createArrayType typ (Just size) = DArray typ (Just size)
 createArrayType typ Nothing = typ
 
 
@@ -93,12 +104,12 @@ semanticVerifyBlock (Block (decls, statements)) m ar =
 
 {-(map (Right . Data.ByteString.Lazy.putStrLn . encodePretty) decls ) ++ -}
 
--- TODO: CHECK CORRECT TYPES
 semanticVerifyStatement :: Statement -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())])
 semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
-  let (m2, ar2) = semanticVerifyExpression lexpr m ar
-      (m3, ar3) = semanticVerifyExpression rexpr m2 ar2 in
-        (m3, ar3)
+  let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
+      (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
+      ar4 = ar3 ++ if ty2 == ty3 then [Right $ printf "Type of assignment correct\n" ] else [Right $ printf "Type of assignment incorrect -- expected %s, received %s\n" (show ty2) (show ty3) ] in
+        (m3, ar4)
 
 semanticVerifyStatement (MethodCallStatement methodCall) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ MethodCallStatement methodCall)])
 
@@ -106,35 +117,63 @@ semanticVerifyStatement (BreakStatement) m ar = (m, ar ++ [Right $ printf "saw %
 
 semanticVerifyStatement (ContinueStatement) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ ContinueStatement)])
 
-semanticVerifyStatement (ReturnStatement expr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ ReturnStatement expr)])
+-- TODO: CHECK CORRECT TYPES
+semanticVerifyStatement (ReturnStatement expr) m ar =
+  let (m2, ar2, typ) = semanticVerifyExpression expr m ar in
+    (m2, ar2)
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LoopStatement lCond lBody lInit lIncr)])
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ IfStatement ifCond ifTrue ifFalse)])
 
-semanticVerifyExpression :: Expression -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())])
+semanticVerifyExpression :: Expression -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())], DataType)
 
 -- TODO: CHECK CORRECT TYPES
-semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
-  let (m2, ar2) = semanticVerifyExpression lexpr m ar
-      (m3, ar3) = semanticVerifyExpression rexpr m2 ar2 in
-        (m3, ar3)
+semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar = 
+  let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
+      (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2 in
+        (m3, ar3, InvalidType)
 
-semanticVerifyExpression (NegExpression expr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ NegExpression expr)])
+semanticVerifyExpression (NegExpression expr) m ar = 
+  let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
+      ar3 = ar2 ++ if ty2 == DInt then [Right $ printf "Type of negation expression correct\n" ] else [Right $ printf "Type of negation expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2) ] in
+        (m2, ar3, DInt)
 
-semanticVerifyExpression (NotExpression expr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ NotExpression expr)])
+semanticVerifyExpression (NotExpression expr) m ar = 
+  let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
+      ar3 = ar2 ++ if ty2 == DBool then [Right $ printf "Type of not expression correct\n" ] else [Right $ printf "Type of not expression incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ] in
+        (m2, ar3, DBool)
 
-semanticVerifyExpression (LengthExpression expr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LengthExpression expr)])
+semanticVerifyExpression (LengthExpression expr) m ar = 
+  let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
+      ar3 = ar2 ++ case ty2 of
+         DArray _ _ -> [Right $ printf "Type of length expression correct (%s)\n" (show ty2) ]
+         x -> [Right $ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2) ]
+      in
+        (m2, ar3, DInt)
 
-semanticVerifyExpression (LocationExpression loc) m ar =
-  case (moduleLookup m loc) of
-    Nothing -> (m, ar ++ [Right $ printf "Variable %s not in scope\n" loc])
-    Just a  -> (m, ar ++ [Right $ printf "Variable %s IN scope as %s\n" loc (show a)])
+semanticVerifyExpression (LiteralExpression lit) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LiteralExpression lit)], InvalidType)
 
-semanticVerifyExpression (LookupExpression loc expr ) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LocationExpression loc)])
+semanticVerifyExpression (MethodCallExpression methodCall) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ MethodCallExpression methodCall)], InvalidType)
 
-semanticVerifyExpression (LiteralExpression lit) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LiteralExpression lit)])
+semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ CondExpression cCond cTrue cFalse)], InvalidType)
 
-semanticVerifyExpression (MethodCallExpression methodCall) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ MethodCallExpression methodCall)])
+semanticVerifyExpression (LocationExpression loc) m ar = (m, ar, InvalidType)
+--  case (moduleLookup m loc) of
+--    Nothing -> (m, ar ++ [Right $ printf "Variable %s not in scope\n" loc], InvalidType)
+--    Just a  -> (m, ar ++ [Right $ printf "Variable %s IN scope as %s\n" loc (show a)], a)
 
-semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ CondExpression cCond cTrue cFalse)])
+semanticVerifyExpression (LookupExpression loc expr ) m ar = (m, ar, InvalidType)
+
+{-
+semanticVerifyExpression (LookupExpression loc expr ) m ar = 
+  let (m2, ar2, ty2) = semanticVerifyExpression (LocationExpression loc) m ar
+      (m3, ar3, ty3) = semanticVerifyExpression expr m ar 
+      ar4 = ar3 ++ case ty2 of
+         DArray _ _ -> [Right $ printf "Type of array lookup expression correct\n" ]
+         x -> [Right $ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2) ]
+      ar5 = if ty2 == DInt then [Right $ printf "Type of array lookup expression correct\n" ] else [Right $ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2) ] in
+        (m3, ar5, arrayInnerType ty2)
+-}
+
+
