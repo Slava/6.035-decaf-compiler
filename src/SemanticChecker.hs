@@ -52,8 +52,11 @@ semanticVerifyDeclaration (Callout name) m ar = (m, ar ++ [Right $ printf "saw %
 
 semanticVerifyDeclaration (Fields (Type stype, fields) ) m ar = 
   let typ = stringToType stype in
-    foldl ( \(m2,ar) (name, size) -> 
-      let (m2, success) = addToModule m (createArrayType typ size) name in (m2, if success then ar ++ [ Right $ printf "Declared variable %s\n" name ] else ar ++ [ Right $ printf "Could not redefine variable %s\n" name ] ) ) (m, ar) fields
+    foldl ( \(m2,ar) (name, size) ->
+      let (m2, success) = addToModule m (createArrayType typ size) name in
+        let ar2 = ar ++ (if success then [ Right $ printf "Declared variable %s\n" name ] else [ Right $ printf "Could not redefine variable %s\n" name ] ) in
+          (m2, ar2)
+    ) (m, ar) fields
 
 semanticVerifyDeclaration (Method rt name args body) m ar =
   let block = semanticVerifyBlock body m ar in block
