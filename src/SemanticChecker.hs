@@ -156,7 +156,13 @@ semanticVerifyExpression (LiteralExpression lit) m ar = (m, ar ++ [Right $ print
 
 semanticVerifyExpression (MethodCallExpression methodCall) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ MethodCallExpression methodCall)], InvalidType)
 
-semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ CondExpression cCond cTrue cFalse)], InvalidType)
+semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar = 
+  let (m2, ar2, ty2) = semanticVerifyExpression cCond m ar
+      (m3, ar3, ty3) = semanticVerifyExpression cTrue m2 ar2
+      (m4, ar4, ty4) = semanticVerifyExpression cFalse m3 ar3
+      ar5 = ar4 ++ if ty2 == DInt then [Right $ printf "Conditional in ternary type correct\n" ] else [Right $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ]
+      ar6 = ar5 ++ if ty3 == ty4 then [Right $ printf "Types in ternary match\n" ] else [Right $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4) ] in
+        (m4, ar6, ty3)
 
 semanticVerifyExpression (LocationExpression loc) m ar =
   case (moduleLookup m loc) of
