@@ -53,10 +53,6 @@ data Statement = Assignment (Expression, Expression)
 
 instance ToJSON Statement where
 
-data Location = Location (String, Maybe Expression) deriving (Eq, Show, Generic)
-
-instance ToJSON Location where
-
 data Literal = StringLiteral String
              | IntLiteral Int
              | CharLiteral Char
@@ -69,7 +65,8 @@ data Expression = BinOpExpression (String, Expression, Expression)
                 | NegExpression Expression
                 | NotExpression Expression
                 | LengthExpression Expression
-                | LocationExpression Location
+                | LocationExpression String
+                | LookupExpression String Expression
                 | LiteralExpression Literal
                 | MethodCallExpression MethodCall
                 | CondExpression { condCondition :: Expression

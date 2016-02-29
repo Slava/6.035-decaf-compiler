@@ -1,4 +1,6 @@
-void main() {
+callout devafg;
+
+void main(int a) {
   boolean x;
-  x = false || false && !true || true && true == true || false;
+  x = false || false && !true || true && true == true || false && z;
 }

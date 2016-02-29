@@ -11,10 +11,12 @@ import Data.Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy (putStrLn)
 
-data DataType = DBool
+data DataType = DCallout
+              | DBool
               | DInt
               | DArray DataType Int {- Type and bounds -}
               | DFunction DataType [DataType]
+              | DVoid
               | InvalidType
                 deriving (Eq, Show);
 
@@ -31,6 +33,14 @@ data Module = Module {
 addToModule :: Module -> DataType -> String -> (Module, Bool {- if failed -} )
 addToModule (Module parent lookup) dtype dname =
   ( Module parent ( HashMap.insert dname (Data dname dtype) lookup ) , not $ HashMap.member dname lookup )
+
+moduleLookup :: Module -> String -> Maybe DataType
+moduleLookup (Module parent m) s =
+  case HashMap.lookup s m of
+    Just (Data _ a) -> Just a
+    Nothing -> case parent of
+      Just a -> moduleLookup a s
+      Nothing -> Nothing
 
 makeChild :: Module -> Module
 makeChild m = Module (Just m) HashMap.empty
@@ -50,23 +60,30 @@ semanticVerifyProgram (Program p) m ar =
   foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, ar) p
 
 semanticVerifyDeclaration :: Declaration -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())])
-semanticVerifyDeclaration (Callout name) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ Callout name)])
+semanticVerifyDeclaration (Callout name) m ar =
+  let (m2, success) = addToModule m DCallout name
+      ar2 = ar ++ (if success then [ Right $ printf "Declared callout %s\n" name ] else [ Right $ printf "Could not redefine callout %s\n" name ] ) in
+      (m2, ar2)
 
 semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
   let typ = stringToType stype in
     foldl ( \(m2,ar) (name, size) ->
-      let (m2, success) = addToModule m (createArrayType typ size) name in
-        let ar2 = ar ++ (if success then [ Right $ printf "Declared variable %s\n" name ] else [ Right $ printf "Could not redefine variable %s\n" name ] ) in
+      let (m2, success) = addToModule m (createArrayType typ size) name
+          ar2 = ar ++ (if success then [ Right $ printf "Declared variable %s\n" name ] else [ Right $ printf "Could not redefine variable %s\n" name ] ) in
           (m2, ar2)
     ) (m, ar) fields
 
 semanticVerifyDeclaration (Method rt name args body) m ar =
-  let (m2, success) = addToModule m (DFunction (stringToType rt) (map (stringToType . (\(Argument (x,_)) -> x)) args)) name in
-    let ar2 = if success then ar ++ [ Right $ printf "Declared function %s\n" name ] else ar ++ [ Right $ printf "Could not redefine function %s\n" name ] in
-      let m3 = makeChild m2 in
-        let (m4, ar3) = (m3, ar2) in
-          let block = semanticVerifyBlock body m2 ar2 in
-            block
+  let (m2, success) = addToModule m (DFunction (stringToType rt) (map (stringToType . (\(Argument (x,_)) -> x)) args)) name
+      ar2 = if success then ar ++ [ Right $ printf "Declared function %s\n" name ] else ar ++ [ Right $ printf "Could not redefine function %s\n" name ]
+      m3 = makeChild m2
+      (m4, ar3) = foldl (\(m2,ar) (Argument (t, s)) ->
+        let (m2, success) = addToModule m (stringToType t) s
+            ar2 = ar ++ (if success then [ Right $ printf "Declared argument %s\n" s ] else [ Right $ printf "Could not redefine argument %s\n" s ] ) in
+            (m2, ar2)
+        ) (m3, ar2) args
+      block = semanticVerifyBlock body m4 ar3 in
+        block
 
 semanticVerifyBlock :: Block -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())])
 semanticVerifyBlock (Block (decls, statements)) m ar =
@@ -76,11 +93,12 @@ semanticVerifyBlock (Block (decls, statements)) m ar =
 
 {-(map (Right . Data.ByteString.Lazy.putStrLn . encodePretty) decls ) ++ -}
 
+-- TODO: CHECK CORRECT TYPES
 semanticVerifyStatement :: Statement -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())])
 semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
-  let (m2, ar2) = semanticVerifyExpression lexpr m ar in
-    let (m3, ar3) = semanticVerifyExpression rexpr m2 ar2 in
-      (m3, ar3)
+  let (m2, ar2) = semanticVerifyExpression lexpr m ar
+      (m3, ar3) = semanticVerifyExpression rexpr m2 ar2 in
+        (m3, ar3)
 
 semanticVerifyStatement (MethodCallStatement methodCall) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ MethodCallStatement methodCall)])
 
@@ -95,7 +113,12 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar = (m, ar ++
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ IfStatement ifCond ifTrue ifFalse)])
 
 semanticVerifyExpression :: Expression -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())])
-semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ BinOpExpression (op, lexpr, rexpr))])
+
+-- TODO: CHECK CORRECT TYPES
+semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
+  let (m2, ar2) = semanticVerifyExpression lexpr m ar
+      (m3, ar3) = semanticVerifyExpression rexpr m2 ar2 in
+        (m3, ar3)
 
 semanticVerifyExpression (NegExpression expr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ NegExpression expr)])
 
@@ -103,7 +126,12 @@ semanticVerifyExpression (NotExpression expr) m ar = (m, ar ++ [Right $ printf "
 
 semanticVerifyExpression (LengthExpression expr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LengthExpression expr)])
 
-semanticVerifyExpression (LocationExpression loc) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LocationExpression loc)])
+semanticVerifyExpression (LocationExpression loc) m ar =
+  case (moduleLookup m loc) of
+    Nothing -> (m, ar ++ [Right $ printf "Variable %s not in scope\n" loc])
+    Just a  -> (m, ar ++ [Right $ printf "Variable %s IN scope as %s\n" loc (show a)])
+
+semanticVerifyExpression (LookupExpression loc expr ) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LocationExpression loc)])
 
 semanticVerifyExpression (LiteralExpression lit) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LiteralExpression lit)])
 

@@ -181,10 +181,13 @@ LoopIncr
       | ',' intLiteral   { Just ((read $2) :: Int) }
 
 Location
-      : Location_ { LocationExpression $1 }
+      : Location_ { $1 }
 
 Location_
-      : identifier Location_sub { Location ($1, $2) }
+      : identifier Location_sub { case $2 of
+          Nothing -> LocationExpression $1
+          Just a -> LookupExpression $1 a
+      }
 
 Location_sub
       : '[' Expression ']' { Just $2 }
@@ -214,7 +217,7 @@ Expression
       | '-' Expression %prec NEG    { NegExpression $2 }
       | '!' Expression %prec NOT    { NotExpression $2 }
       | '(' Expression ')'          { $2 }
-      | '@' identifier              { LengthExpression (LocationExpression (Location ($2, Nothing))) }
+      | '@' identifier              { LengthExpression (LocationExpression $2) }
       | MethodCall                  { $1 }
       | Expression '?' Expression ':' Expression
                                     { CondExpression {condCondition=$1, condConsequent=$3, condAlternative=$5} }
