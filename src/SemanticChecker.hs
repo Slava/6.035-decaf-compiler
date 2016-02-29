@@ -124,7 +124,12 @@ semanticVerifyStatement (ReturnStatement expr) m ar =
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ LoopStatement lCond lBody lInit lIncr)])
 
-semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar = (m, ar ++ [Right $ printf "saw %s\n" (show $ IfStatement ifCond ifTrue ifFalse)])
+semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
+  let (m2, ar2, ty2) = semanticVerifyExpression ifCond m ar
+      (m3, ar3) = semanticVerifyBlock ifTrue m ar2
+      (m4, ar4) = semanticVerifyBlock ifFalse m ar3
+      ar5 = ar4 ++ if ty2 == DInt then [Right $ printf "Conditional in ternary type correct\n" ] else [Right $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ] in
+        (m, ar5)
 
 semanticVerifyExpression :: Expression -> Module -> [Either Dummy (IO ())] -> (Module, [Either Dummy (IO ())], DataType)
 
