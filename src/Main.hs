@@ -94,7 +94,7 @@ process configuration input =
   case Configuration.target configuration of
     Scan -> scan configuration input
     Parse -> parse configuration input
-    SemanticCheck -> semanticCheck configuration input
+    Inter -> semanticCheck configuration input
     AST -> printAst configuration input
     phase -> Left $ show phase ++ " not implemented\n"
 
@@ -127,9 +127,10 @@ semanticCheck configuration input = do
   case (Parser.parse tokens) of
     Left  a -> Left a
     Right ast -> do
-      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) ) []
-      let (good, ios) = partitionEithers $ asts
-      Right (ios ++ [ printf "test\n" ])
+      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) ) (Right SemanticChecker.Dummy)
+      case asts of
+        Left errors -> Right errors
+        Right a -> Right []
 
 printAst :: Configuration -> String -> Either String [IO ()]
 printAst configuration input = do
