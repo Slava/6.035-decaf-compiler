@@ -19,6 +19,8 @@ data DataType = DCallout
               | DArray DataType (Maybe Int) {- Type and bounds -}
               | DFunction DataType [DataType]
               | DVoid
+              | DString
+              | DChar
               | InvalidType
                 deriving (Eq, Show);
 
@@ -152,8 +154,12 @@ semanticVerifyExpression :: Expression -> Module -> Either [IO ()] Dummy -> (Mod
 -- TODO: CHECK CORRECT TYPES
 semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar = 
   let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
-      (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2 in
-        (m3, ar3, InvalidType)
+      (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
+      expcTypes = expectedOperandTypes op
+      returnType = returnOperatorType op ty2
+      cx1 = combineCx ar3 (if ty2 `elem` expcTypes then Right Dummy else Left [ printf "Incorrect type of left operand for op %s: %s\n" op (show ty2) ])
+      cx2 = combineCx cx1 (if ty3 == ty2 then Right Dummy else Left [ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3)  (show ty2)]) in
+        (m3, cx2, returnType)
 
 semanticVerifyExpression (NegExpression expr) m ar = 
   let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
@@ -175,7 +181,8 @@ semanticVerifyExpression (LengthExpression expr) m ar =
       in
         (m2, ar3, DInt)
 
-semanticVerifyExpression (LiteralExpression lit) m ar = (m, combineCx ar (Right Dummy), InvalidType)
+semanticVerifyExpression (LiteralExpression lit) m ar =
+  (m, combineCx ar (Right Dummy), litType lit)
 
 semanticVerifyExpression (MethodCallExpression methodCall) m ar = (m, combineCx ar (Right Dummy), InvalidType)
 
@@ -202,3 +209,40 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
         (m3, ar5, arrayInnerType ty2)
 
 
+litType :: Literal -> DataType
+litType (StringLiteral s) = DString
+litType (CharLiteral s) = DChar
+litType (IntLiteral s) = DInt
+litType (BoolLiteral s) = DBool
+
+expectedOperandTypes :: String -> [DataType]
+expectedOperandTypes op
+  | op == "+"   =  [DInt]
+  | op == "-"   =  [DInt]
+  | op == "*"   =  [DInt]
+  | op == "/"   =  [DInt]
+  | op == "%"   =  [DInt]
+  | op == "<"   =  [DInt]
+  | op == ">"   =  [DInt]
+  | op == ">="  =  [DInt]
+  | op == "<="  =  [DInt]
+  | op == "=="  =  [DInt, DBool]
+  | op == "!="  =  [DInt, DBool]
+  | op == "&&"  =  [DBool]
+  | op == "||"  =  [DBool]
+
+returnOperatorType :: String -> DataType -> DataType
+returnOperatorType op operandType
+  | op == "+"   =  DInt
+  | op == "-"   =  DInt
+  | op == "*"   =  DInt
+  | op == "/"   =  DInt
+  | op == "%"   =  DInt
+  | op == "<"   =  DBool
+  | op == ">"   =  DBool
+  | op == ">="  =  DBool
+  | op == "<="  =  DBool
+  | op == "=="  =  operandType
+  | op == "!="  =  operandType
+  | op == "&&"  =  DBool
+  | op == "||"  =  DBool

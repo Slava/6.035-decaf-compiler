@@ -1,5 +1,5 @@
 void main() {
   boolean x;
   boolean x;
-  x = false || false && !true || true && true == true || false;
+  x = false || !true ||  true == true;
 }
