@@ -1,4 +1,4 @@
-{-# OPTIONS -Wall #-} 
+{-# OPTIONS -Wall #-}
 
 module SemanticChecker where
 import GHC.Generics
@@ -152,28 +152,28 @@ semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
 semanticVerifyExpression :: Expression -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy, DataType)
 
 -- TODO: CHECK CORRECT TYPES
-semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar = 
+semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
       (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
       expcTypes = expectedOperandTypes op
-      returnType = returnOperatorType op ty2
+      returnType = returnOperatorType op
       cx1 = combineCx ar3 (if ty2 `elem` expcTypes then Right Dummy else Left [ printf "Incorrect type of left operand for op %s: %s\n" op (show ty2) ])
       cx2 = combineCx cx1 (if ty3 == ty2 then Right Dummy else Left [ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3)  (show ty2)]) in
         (m3, cx2, returnType)
 
-semanticVerifyExpression (NegExpression expr) m ar = 
+semanticVerifyExpression (NegExpression expr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
       res = if ty2 == DInt then Right Dummy else Left [ printf "Type of negation expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2) ]
       ar3 = combineCx ar2 res in
         (m2, ar3, DInt)
 
-semanticVerifyExpression (NotExpression expr) m ar = 
+semanticVerifyExpression (NotExpression expr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
       res = if ty2 == DBool then Right Dummy else Left [printf "Type of not expression incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ]
       ar3 = combineCx ar2 res in
         (m2, ar3, DBool)
 
-semanticVerifyExpression (LengthExpression expr) m ar = 
+semanticVerifyExpression (LengthExpression expr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
       ar3 = combineCx ar2 $ case ty2 of
          DArray _ _ -> Right Dummy
@@ -186,7 +186,7 @@ semanticVerifyExpression (LiteralExpression lit) m ar =
 
 semanticVerifyExpression (MethodCallExpression methodCall) m ar = (m, combineCx ar (Right Dummy), InvalidType)
 
-semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar = 
+semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression cCond m ar
       (m3, ar3, ty3) = semanticVerifyExpression cTrue m2 ar2
       (m4, ar4, ty4) = semanticVerifyExpression cFalse m3 ar3
@@ -199,9 +199,9 @@ semanticVerifyExpression (LocationExpression loc) m ar =
     Nothing -> (m, combineCx ar (Left [printf "Variable %s not in scope\n" loc]), InvalidType)
     Just a  -> (m, combineCx ar (Right Dummy), a)
 
-semanticVerifyExpression (LookupExpression loc expr ) m ar = 
+semanticVerifyExpression (LookupExpression loc expr ) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression (LocationExpression loc) m ar
-      (m3, ar3, ty3) = semanticVerifyExpression expr m ar 
+      (m3, ar3, ty3) = semanticVerifyExpression expr m ar
       ar4 = combineCx ar3 (case ty2 of
          DArray _ _ -> Right Dummy
          x -> Left [ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2) ])
@@ -231,8 +231,8 @@ expectedOperandTypes op
   | op == "&&"  =  [DBool]
   | op == "||"  =  [DBool]
 
-returnOperatorType :: String -> DataType -> DataType
-returnOperatorType op operandType
+returnOperatorType :: String -> DataType
+returnOperatorType op
   | op == "+"   =  DInt
   | op == "-"   =  DInt
   | op == "*"   =  DInt
@@ -242,7 +242,7 @@ returnOperatorType op operandType
   | op == ">"   =  DBool
   | op == ">="  =  DBool
   | op == "<="  =  DBool
-  | op == "=="  =  operandType
-  | op == "!="  =  operandType
+  | op == "=="  =  DBool
+  | op == "!="  =  DBool
   | op == "&&"  =  DBool
   | op == "||"  =  DBool
