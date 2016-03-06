@@ -139,7 +139,16 @@ semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = semanticVerifyExpression expr m ar in
     (m2, ar2)
 
-semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar = (m, combineCx ar (Right Dummy))
+-- TODO: HANDLE SCOPING STUFF
+semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
+  let (m2, ar2, ty2) = semanticVerifyExpression lCond m ar
+      (m3, ar3) = semanticVerifyBlock lBody m ar
+      (m4, ar4) = case lInit of
+        Just sta  -> semanticVerifyStatement sta m ar
+        Nothing   -> (m, Right Dummy)
+      cx1 = combineCx ar3 $ if ty2 == DInt then Right Dummy else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ]
+      cx2 = combineCx cx1 ar4 in
+        (m, cx2)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression ifCond m ar
