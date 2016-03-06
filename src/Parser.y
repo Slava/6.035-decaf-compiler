@@ -168,7 +168,7 @@ Statement
       | break ';'                        { BreakStatement }
       | while '(' Expression ')' Block   { LoopStatement {loopCondition=$3, loopBody=$5, loopInit=Nothing, loopIncr=Nothing} }
       | for '(' identifier '=' Expression ',' Expression LoopIncr ')' Block
-        { LoopStatement {loopCondition=$7, loopBody=$10, loopInit=Just $ constructAssignment $3 $5, loopIncr=$8} }
+        { LoopStatement {loopCondition=(constructForLoopCondition $3 $7), loopBody=$10, loopInit=Just $ constructAssignment $3 $5, loopIncr=$8} }
       | if '(' Expression ')' Block OptElse
         { IfStatement {ifCondition=$3, ifConsequentBody=$5, ifAlternativeBody=$6} }
 
@@ -259,6 +259,9 @@ constructAssignmentStatement lhs op rhs =
 -- Hacky way to set the assignment in for loops
 constructAssignment lhs rhs =
   Assignment (LocationExpression lhs, rhs)
+
+constructForLoopCondition id limitExpr =
+  BinOpExpression ("<", LocationExpression id, limitExpr)
 
 parseError :: [ScannedToken] -> Either String a
 parseError [] = Left "unexpected EOF"

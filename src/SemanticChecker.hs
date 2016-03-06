@@ -92,7 +92,7 @@ semanticVerifyDeclaration (Callout name) m ar =
 
 semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
   let typ = stringToType stype in
-    foldl ( \(m2,ar) (name, size) ->
+    foldl ( \(m,ar) (name, size) ->
       let (m2, success) = addToModule m (createArrayType typ size) name
           res = (if success then Right Dummy else Left [ printf "Could not redefine variable %s\n" name ] )
           ar2 = (combineCx ar res) in
@@ -103,7 +103,7 @@ semanticVerifyDeclaration (Method rt name args body) m ar =
   let (m2, success) = addToModule m (DFunction (stringToType rt) (map (stringToType . (\(Argument (x,_)) -> x)) args)) name
       ar2 = if success then (combineCx ar (Right Dummy)) else (combineCx ar (Left [ printf "Could not redefine function %s\n" name ]))
       m3 = makeChild m2
-      (m4, ar3) = foldl (\(m2,ar) (Argument (t, s)) ->
+      (m4, ar3) = foldl (\(m,ar) (Argument (t, s)) ->
         let (m2, success) = addToModule m (stringToType t) s
             res = (if success then Right Dummy else Left [ printf "Could not redefine argument %s\n" s ] )
             ar2 = combineCx ar res in
@@ -128,11 +128,16 @@ semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
       ar4 = combineCx ar3 res in
         (m3, ar4)
 
-semanticVerifyStatement (MethodCallStatement methodCall) m ar = (m, combineCx ar (Left [printf "saw %s\n" (show $ MethodCallStatement methodCall)]))
+semanticVerifyStatement (MethodCallStatement methodCall) m ar =
+  (m, combineCx ar (Left [printf "saw %s\n" (show $ MethodCallStatement methodCall)]))
 
-semanticVerifyStatement (BreakStatement) m ar = (m, combineCx ar (Left [printf "saw %s\n" (show $ BreakStatement)]))
+semanticVerifyStatement (BreakStatement) m ar =
+  -- TODO: should check that the break statement is within a loop
+  (m, ar)
 
-semanticVerifyStatement (ContinueStatement) m ar = (m, combineCx ar (Left [printf "saw %s\n" (show $ ContinueStatement)]))
+semanticVerifyStatement (ContinueStatement) m ar =
+  -- TODO: should check that the break statement is within a loop
+  (m, ar)
 
 -- TODO: CHECK CORRECT TYPES
 semanticVerifyStatement (ReturnStatement expr) m ar =
@@ -146,7 +151,7 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
       (m4, ar4) = case lInit of
         Just sta  -> semanticVerifyStatement sta m ar
         Nothing   -> (m, Right Dummy)
-      cx1 = combineCx ar3 $ if ty2 == DInt then Right Dummy else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ]
+      cx1 = combineCx ar3 $ if ty2 == DBool then Right Dummy else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ]
       cx2 = combineCx cx1 ar4 in
         (m, cx2)
 
@@ -154,7 +159,7 @@ semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression ifCond m ar
       (m3, ar3) = semanticVerifyBlock ifTrue m ar2
       (m4, ar4) = semanticVerifyBlock ifFalse m ar3
-      res = if ty2 == DInt then Right Dummy else Left [ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ]
+      res = if ty2 == DBool then Right Dummy else Left [ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ]
       ar5 = combineCx ar4 res in
         (m, ar5)
 
@@ -215,7 +220,7 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
          DArray _ _ -> Right Dummy
          x -> Left [ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2) ])
       ar5 = if ty3 == DInt then Right Dummy else Left [ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3) ] in
-        (m3, ar5, arrayInnerType ty2)
+        (m3, combineCx ar4 ar5, arrayInnerType ty2)
 
 
 litType :: Literal -> DataType
