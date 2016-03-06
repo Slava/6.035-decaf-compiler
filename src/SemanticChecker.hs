@@ -205,7 +205,7 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
       ar4 = combineCx ar3 (case ty2 of
          DArray _ _ -> Right Dummy
          x -> Left [ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2) ])
-      ar5 = if ty2 == DInt then Right Dummy else Left [ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2) ] in
+      ar5 = if ty3 == DInt then Right Dummy else Left [ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3) ] in
         (m3, ar5, arrayInnerType ty2)
 
 
