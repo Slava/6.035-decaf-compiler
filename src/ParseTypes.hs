@@ -41,7 +41,7 @@ data Statement = Assignment (Expression, Expression)
                | MethodCallStatement MethodCall
                | BreakStatement
                | ContinueStatement
-               | ReturnStatement Expression
+               | ReturnStatement (Maybe Expression)
                | LoopStatement { loopCondition :: Expression
                                , loopBody :: Block
                                , loopInit :: Maybe (String, Expression)

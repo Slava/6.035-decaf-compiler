@@ -163,7 +163,7 @@ Statements_
 Statement
       : Location AssignOp Expression ';' { constructAssignmentStatement $1 $2 $3 }
       | MethodCall_ ';'                  { MethodCallStatement $1 }
-      | return Expression ';'            { ReturnStatement $2 }
+      | return RExpression ';'            { ReturnStatement $2 }
       | continue ';'                     { ContinueStatement }
       | break ';'                        { BreakStatement }
       | while '(' Expression ')' Block   { LoopStatement {loopCondition=$3, loopBody=$5, loopInit=Nothing, loopIncr=Nothing} }
@@ -197,6 +197,10 @@ AssignOp
       : '='  { AssignmentOp }
       | "+=" { AddAssignmentOp }
       | "-=" { SubtractAssignmentOp }
+
+RExpression
+      : Expression                { Just $1 }
+      | {- empty -}               { Nothing }
 
 Expression
       : Location                    { $1 }

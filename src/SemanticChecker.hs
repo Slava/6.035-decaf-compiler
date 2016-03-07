@@ -25,6 +25,7 @@ data DataType = DCallout
                 deriving (Eq, Show);
 
 data ScopeType = Loop
+               | Function DataType
                | Other
                  deriving (Eq, Show);
 
@@ -55,9 +56,17 @@ scopeLookup :: Module -> Maybe ScopeType
 scopeLookup (Module parent _ scopeType) =
   case scopeType of
     Loop -> Just Loop
-    Other -> case parent of
-      Just a -> scopeLookup a
+    _    -> case parent of
+      Just a  -> scopeLookup a
       Nothing -> Nothing
+
+functionTypeLookup :: Module -> Maybe DataType
+functionTypeLookup (Module parent _ scopeType) =
+    case scopeType of
+      Function t -> Just t
+      _          -> case parent of
+        Just a  -> functionTypeLookup a
+        Nothing -> Nothing
 
 makeChild :: Module -> ScopeType -> Module
 makeChild m s = Module (Just m) HashMap.empty s 
@@ -115,7 +124,7 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
 semanticVerifyDeclaration (Method rt name args body) m ar =
   let (m2, success) = addToModule m (DFunction (stringToType rt) (map (stringToType . (\(Argument (x,_)) -> x)) args)) name
       ar2 = if success then (combineCx ar (Right Dummy)) else (combineCx ar (Left [ printf "Could not redefine function %s\n" name ]))
-      m3 = makeChild m2 Other
+      m3 = makeChild m2 (Function $ stringToType rt) 
       (m4, ar3) = foldl (\(m,ar) (Argument (t, s)) ->
         let (m2, success) = addToModule m (stringToType t) s
             res = (if success then Right Dummy else Left [ printf "Could not redefine argument %s\n" s ] )
@@ -156,10 +165,15 @@ semanticVerifyStatement (ContinueStatement) m ar =
       ar2 = combineCx ar res in
         (m, ar2)
 
--- TODO: CHECK CORRECT TYPES
 semanticVerifyStatement (ReturnStatement expr) m ar =
-  let (m2, ar2, typ) = semanticVerifyExpression expr m ar in
-    (m2, ar2)
+  let (m2, ar2, typ) = case expr of
+        Just exp -> semanticVerifyExpression exp m ar 
+        Nothing  -> (m, ar, DVoid) 
+      ar3 = case functionTypeLookup m of
+        Just t -> if t == typ then (Right Dummy) else Left [printf "Return statement should return type %s, got type %s\n" (show t) (show typ) ]
+        Nothing -> Left [printf "Function didn't have return type\n"]
+      cx1 = combineCx ar2 ar3 in
+        (m, cx1)
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lCond m ar
