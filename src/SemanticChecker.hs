@@ -123,10 +123,11 @@ semanticVerifyDeclaration (Callout name) m ar =
 semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
   let typ = stringToType stype in
     foldl ( \(m,ar) (name, size) ->
-      let (m2, success) = addToModule m (createArrayType typ size) name
+      let ar2 = if size > 0 then ar else (combineCx ar (Left [printf "Array size must be greater than 0"])) 
+          (m2, success) = addToModule m (createArrayType typ size) name
           res = (if success then Right Dummy else Left [ printf "Could not redefine variable %s\n" name ] )
-          ar2 = (combineCx ar res) in
-          (m2, ar2)
+          ar3 = (combineCx ar2 res) in
+          (m2, ar3)
     ) (m, ar) fields
 
 semanticVerifyDeclaration (Method rt name args body) m ar =
