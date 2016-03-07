@@ -60,10 +60,10 @@ scopeLookup (Module parent _ scopeType) =
       Nothing -> Nothing
 
 makeChild :: Module -> ScopeType -> Module
-makeChild m s = Module (Just m) HashMap.empty s 
+makeChild m s = Module (Just m) HashMap.empty s
 
 stringToType :: Type -> DataType
-stringToType (Type n) = if n == "int" then DInt else if n == "boolean" then DBool else InvalidType
+stringToType (Type n) = if n == "int" then DInt else if n == "boolean" then DBool else if n == "void" then DVoid else InvalidType
 
 arrayInnerType :: DataType -> DataType
 arrayInnerType (DArray n _) = n
@@ -91,10 +91,18 @@ combineCx (Right Dummy) newCx =
 combineCx (Left ls) (Left newLs) =
   Left (ls ++ newLs)
 
+debug :: [IO ()] -> [IO ()]
+--debug a = a
+debug a = []
 
 semanticVerifyProgram :: Program -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy)
 semanticVerifyProgram (Program p) m ar =
-  foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, ar) p
+  let (m2, d2) = foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, ar) p
+      val = moduleLookup m2 "main"
+      d3 = combineCx d2 (case val of
+              Nothing -> Left [printf "Program does not contain main method\n"]
+              Just typ -> if ( typ == (DFunction DInt []) ) || ( typ == (DFunction DBool []) ) || ( typ == (DFunction DVoid []) ) then Right Dummy else Left [printf "Main declared as incorrect type: expected %s got %s\n" (show (DFunction DVoid [])) (show typ)]) in
+      (m2, d3)
 
 semanticVerifyDeclaration :: Declaration -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy)
 semanticVerifyDeclaration (Callout name) m ar =
@@ -142,7 +150,7 @@ semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
         (m3, ar4)
 
 semanticVerifyStatement (MethodCallStatement methodCall) m ar =
-  (m, combineCx ar (Left [printf "saw %s\n" (show $ MethodCallStatement methodCall)]))
+  (m, combineCx ar (Left $ debug [printf "saw %s\n" (show $ MethodCallStatement methodCall)]))
 
 semanticVerifyStatement (BreakStatement) m ar =
   -- TODO: should check that the break statement is within a loop
