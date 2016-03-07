@@ -89,8 +89,9 @@ createArrayType typ Nothing = typ
 
 
 data Dummy = Dummy deriving(Eq, Show)
+type Context = Either [IO ()] Dummy
 
-combineCx :: Either [IO ()] Dummy -> Either [IO ()] Dummy -> Either [IO ()] Dummy
+combineCx :: Context -> Context -> Context
 combineCx cx (Right Dummy) =
   cx
 
@@ -104,7 +105,7 @@ debug :: [IO ()] -> [IO ()]
 --debug a = a
 debug a = []
 
-semanticVerifyProgram :: Program -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy)
+semanticVerifyProgram :: Program -> Module -> Context -> (Module, Context)
 semanticVerifyProgram (Program p) m ar =
   let (m2, d2) = foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, ar) p
       val = moduleLookup m2 "main"
@@ -113,7 +114,7 @@ semanticVerifyProgram (Program p) m ar =
               Just typ -> if ( typ == (DFunction DInt []) ) || ( typ == (DFunction DBool []) ) || ( typ == (DFunction DVoid []) ) then Right Dummy else Left [printf "Main declared as incorrect type: expected %s got %s\n" (show (DFunction DVoid [])) (show typ)]) in
       (m2, d3)
 
-semanticVerifyDeclaration :: Declaration -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy)
+semanticVerifyDeclaration :: Declaration -> Module -> Context -> (Module, Context)
 semanticVerifyDeclaration (Callout name) m ar =
   let (m2, success) = addToModule m DCallout name
       res = (if success then Right Dummy else Left [ printf "Could not redefine callout %s\n" name ] )
@@ -145,7 +146,7 @@ semanticVerifyDeclaration (Method rt name args body) m ar =
       block = semanticVerifyBlock body m4 ar3 in
         block
 
-semanticVerifyBlock :: Block -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy)
+semanticVerifyBlock :: Block -> Module -> Context -> (Module, Context)
 semanticVerifyBlock (Block (decls, statements)) m ar =
   let (m2, ar2) = (foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, ar) decls) in
     let (m3, ar3) = (foldl (\acc x -> semanticVerifyStatement x (fst acc) (snd acc)) (m2, ar2) statements) in
@@ -153,7 +154,7 @@ semanticVerifyBlock (Block (decls, statements)) m ar =
 
 {-(map (Right . Data.ByteString.Lazy.putStrLn . encodePretty) decls ) ++ -}
 
-semanticVerifyStatement :: Statement -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy)
+semanticVerifyStatement :: Statement -> Module -> Context -> (Module, Context)
 semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
       (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
@@ -214,7 +215,7 @@ semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
       ar6 = combineCx ar5 res in
         (m, ar6)
 
-semanticVerifyExpression :: Expression -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy, DataType)
+semanticVerifyExpression :: Expression -> Module -> Context -> (Module, Context, DataType)
 
 -- TODO: CHECK CORRECT TYPES
 semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
@@ -319,7 +320,7 @@ returnOperatorType op
   | op == "&&"  =  DBool
   | op == "||"  =  DBool
 
-verifyArgs :: [CalloutArg] -> [Data] -> String -> Module -> Either [IO ()] Dummy -> Either [IO ()] Dummy
+verifyArgs :: [CalloutArg] -> [Data] -> String -> Module -> Context -> Context
 verifyArgs args argTypes methodName m cx =
   if (length args) /= (length argTypes) then
     Left [(printf "Wrong number of arguments passed: %d instead of %d for method %s\n" (length args) (length argTypes) methodName)]
