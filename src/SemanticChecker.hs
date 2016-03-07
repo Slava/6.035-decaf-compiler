@@ -297,7 +297,7 @@ returnOperatorType op
 verifyArgs :: [CalloutArg] -> [Data] -> String -> Module -> Either [IO ()] Dummy -> Either [IO ()] Dummy
 verifyArgs args argTypes methodName m cx =
   if (length args) /= (length argTypes) then
-    Left [(printf "Wrong number of arguments passed: %s instead of %s for method %s\n" (length args) (length argTypes) methodName)]
+    Left [(printf "Wrong number of arguments passed: %d instead of %d for method %s\n" (length args) (length argTypes) methodName)]
   else
     let l = zip args argTypes in
     foldl (\cx (arg, (Data name t)) -> case arg of
