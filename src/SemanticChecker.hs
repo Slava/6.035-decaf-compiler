@@ -17,7 +17,7 @@ data DataType = DCallout
               | DBool
               | DInt
               | DArray DataType (Maybe Int) {- Type and bounds -}
-              | DFunction DataType [DataType]
+              | DFunction DataType [Data]
               | DVoid
               | DString
               | DChar
@@ -45,6 +45,7 @@ moduleLookup (Module parent m) s =
     Nothing -> case parent of
       Just a -> moduleLookup a s
       Nothing -> Nothing
+
 
 makeChild :: Module -> Module
 makeChild m = Module (Just m) HashMap.empty
@@ -100,7 +101,7 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
     ) (m, ar) fields
 
 semanticVerifyDeclaration (Method rt name args body) m ar =
-  let (m2, success) = addToModule m (DFunction (stringToType rt) (map (stringToType . (\(Argument (x,_)) -> x)) args)) name
+  let (m2, success) = addToModule m (DFunction (stringToType rt) (map (\(Argument (t,n)) -> Data n (stringToType t)) args)) name
       ar2 = if success then (combineCx ar (Right Dummy)) else (combineCx ar (Left [ printf "Could not redefine function %s\n" name ]))
       m3 = makeChild m2
       (m4, ar3) = foldl (\(m,ar) (Argument (t, s)) ->
@@ -129,7 +130,8 @@ semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
         (m3, ar4)
 
 semanticVerifyStatement (MethodCallStatement methodCall) m ar =
-  (m, combineCx ar (Left [printf "saw %s\n" (show $ MethodCallStatement methodCall)]))
+ let (m2, ar2, t) = semanticVerifyExpression (MethodCallExpression methodCall) m ar in
+ (m2, ar2)
 
 semanticVerifyStatement (BreakStatement) m ar =
   -- TODO: should check that the break statement is within a loop
@@ -198,7 +200,14 @@ semanticVerifyExpression (LengthExpression expr) m ar =
 semanticVerifyExpression (LiteralExpression lit) m ar =
   (m, combineCx ar (Right Dummy), litType lit)
 
-semanticVerifyExpression (MethodCallExpression methodCall) m ar = (m, combineCx ar (Right Dummy), InvalidType)
+semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
+  case (moduleLookup m name) of
+    Nothing -> (m, combineCx cx (Left [printf "Method or %s not in scope\n" name]), InvalidType)
+    Just (DFunction retType argTypes) ->
+      let res = verifyArgs args argTypes name m cx in
+      (m, res, retType)
+    Just DCallout -> (m, cx, DInt)
+    Just a -> (m, combineCx cx (Left [printf "%s is not a callable method\n" name]), InvalidType)
 
 semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression cCond m ar
@@ -260,3 +269,22 @@ returnOperatorType op
   | op == "!="  =  DBool
   | op == "&&"  =  DBool
   | op == "||"  =  DBool
+
+verifyArgs :: [CalloutArg] -> [Data] -> String -> Module -> Either [IO ()] Dummy -> Either [IO ()] Dummy
+verifyArgs args argTypes methodName m cx =
+  if (length args) /= (length argTypes) then
+    Left [(printf "Wrong number of arguments passed: %s instead of %s for method %s\n" (length args) (length argTypes) methodName)]
+  else
+    let l = zip args argTypes in
+    foldl (\cx (arg, (Data name t)) -> case arg of
+              CalloutStringLit lit -> combineCx cx (checkArg DString t name methodName)
+              CalloutExpression expr ->
+                let (m2, cx2, exprType) = (semanticVerifyExpression expr m cx) in
+                combineCx cx2 (checkArg exprType t name methodName)
+              ) cx l
+
+checkArg passedType origType name methodName =
+  if passedType == origType then
+    Right Dummy
+  else
+    Left [(printf "Wrong type of passed argument %s for method call %s: %s when %s is expected\n" name methodName (show passedType) (show origType))]
