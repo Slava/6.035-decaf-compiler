@@ -161,18 +161,23 @@ semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = semanticVerifyExpression expr m ar in
     (m2, ar2)
 
--- TODO: HANDLE SCOPING STUFF
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lCond m ar
-      (m3, ar3) = case lInit of
-        Just sta  -> semanticVerifyStatement sta m2 ar
-        Nothing   -> (m2, Right Dummy)
-      m4 = makeChild m3 Loop
-      (m5, ar4) = semanticVerifyBlock lBody m4 ar
-      cx1 = combineCx ar2 $ if ty2 == DBool then Right Dummy else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ]
-      cx2 = combineCx cx1 ar3
-      cx3 = combineCx cx2 ar4 in
-        (m, cx3)
+      (m4, ar4) = case lInit of
+        Just (id, expr)  -> 
+          case (moduleLookup m2 id) of
+            Just _  -> 
+              let (m3, ar3, ty3) = semanticVerifyExpression expr m2 ar2 in
+                (m3, combineCx ar3 $ if ty3 == DInt then Right Dummy else Left [ printf "Initializer in loop must be of type int, got type %s\n" (show ty3) ])
+            Nothing -> (m2, combineCx ar2 $ Left [ printf "Identifier in loop assignment not defined\n" ])
+        Nothing          -> (m2, ar2)
+      (m5, ar5) = case lIncr of
+        Just inc  -> (m4, combineCx ar4 $ if inc > 0 then Right Dummy else Left [ printf "Increment in for loop must be positive integer\n" ])
+        Nothing   -> (m4, ar4)
+      m6 = makeChild m4 Loop
+      (m7, ar7) = semanticVerifyBlock lBody m6 ar5
+      cx1 = combineCx ar7 $ if ty2 == DBool then Right Dummy else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ] in
+        (m, cx1)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression ifCond m ar
