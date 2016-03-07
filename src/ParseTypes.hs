@@ -44,7 +44,7 @@ data Statement = Assignment (Expression, Expression)
                | ReturnStatement Expression
                | LoopStatement { loopCondition :: Expression
                                , loopBody :: Block
-                               , loopInit :: Maybe Statement
+                               , loopInit :: Maybe (String, Expression)
                                , loopIncr :: Maybe Int }
                | IfStatement { ifCondition :: Expression
                              , ifConsequentBody :: Block

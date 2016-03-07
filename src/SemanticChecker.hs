@@ -24,31 +24,43 @@ data DataType = DCallout
               | InvalidType
                 deriving (Eq, Show);
 
+data ScopeType = Loop
+               | Other
+                 deriving (Eq, Show);
+
 data Data = Data {
   vName :: String,
   vType :: DataType
 } deriving (Eq, Show)
 
 data Module = Module {
-  parent :: Maybe Module,
-  lookup :: HashMap.Map String Data
+  parent     :: Maybe Module,
+  lookup     :: HashMap.Map String Data,
+  scopeType  :: ScopeType
 } deriving (Eq, Show)
 
 addToModule :: Module -> DataType -> String -> (Module, Bool {- if failed -} )
-addToModule (Module parent lookup) dtype dname =
-  ( Module parent ( HashMap.insert dname (Data dname dtype) lookup ) , not $ HashMap.member dname lookup )
+addToModule (Module parent lookup scopeType) dtype dname =
+  ( Module parent ( HashMap.insert dname (Data dname dtype) lookup ) scopeType , not $ HashMap.member dname lookup )
 
 moduleLookup :: Module -> String -> Maybe DataType
-moduleLookup (Module parent m) s =
+moduleLookup (Module parent m _) s =
   case HashMap.lookup s m of
     Just (Data _ a) -> Just a
     Nothing -> case parent of
       Just a -> moduleLookup a s
       Nothing -> Nothing
 
+scopeLookup :: Module -> Maybe ScopeType
+scopeLookup (Module parent _ scopeType) =
+  case scopeType of
+    Loop -> Just Loop
+    Other -> case parent of
+      Just a -> scopeLookup a
+      Nothing -> Nothing
 
-makeChild :: Module -> Module
-makeChild m = Module (Just m) HashMap.empty
+makeChild :: Module -> ScopeType -> Module
+makeChild m s = Module (Just m) HashMap.empty s 
 
 stringToType :: Type -> DataType
 stringToType (Type n) = if n == "int" then DInt else if n == "boolean" then DBool else InvalidType
@@ -103,7 +115,7 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
 semanticVerifyDeclaration (Method rt name args body) m ar =
   let (m2, success) = addToModule m (DFunction (stringToType rt) (map (\(Argument (t,n)) -> Data n (stringToType t)) args)) name
       ar2 = if success then (combineCx ar (Right Dummy)) else (combineCx ar (Left [ printf "Could not redefine function %s\n" name ]))
-      m3 = makeChild m2
+      m3 = makeChild m2 Other
       (m4, ar3) = foldl (\(m,ar) (Argument (t, s)) ->
         let (m2, success) = addToModule m (stringToType t) s
             res = (if success then Right Dummy else Left [ printf "Could not redefine argument %s\n" s ] )
@@ -135,35 +147,47 @@ semanticVerifyStatement (MethodCallStatement methodCall) m ar =
 
 semanticVerifyStatement (BreakStatement) m ar =
   -- TODO: should check that the break statement is within a loop
-  (m, ar)
+  let res = if scopeLookup m == Just Loop then (Right Dummy) else Left [printf "Break statements must occur in loop\n"]
+      ar2 = combineCx ar res in
+        (m, ar2)
 
 semanticVerifyStatement (ContinueStatement) m ar =
   -- TODO: should check that the break statement is within a loop
-  (m, ar)
+  let res = if scopeLookup m == Just Loop then (Right Dummy) else Left [printf "Continue statements must occur in loop\n"]
+      ar2 = combineCx ar res in
+        (m, ar2)
 
 -- TODO: CHECK CORRECT TYPES
 semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = semanticVerifyExpression expr m ar in
     (m2, ar2)
 
--- TODO: HANDLE SCOPING STUFF
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lCond m ar
-      (m3, ar3) = semanticVerifyBlock lBody m ar
       (m4, ar4) = case lInit of
-        Just sta  -> semanticVerifyStatement sta m ar
-        Nothing   -> (m, Right Dummy)
-      cx1 = combineCx ar3 $ if ty2 == DBool then Right Dummy else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ]
-      cx2 = combineCx cx1 ar4 in
-        (m, cx2)
+        Just (id, expr)  -> 
+          case (moduleLookup m2 id) of
+            Just _  -> 
+              let (m3, ar3, ty3) = semanticVerifyExpression expr m2 ar2 in
+                (m3, combineCx ar3 $ if ty3 == DInt then Right Dummy else Left [ printf "Initializer in loop must be of type int, got type %s\n" (show ty3) ])
+            Nothing -> (m2, combineCx ar2 $ Left [ printf "Identifier in loop assignment not defined\n" ])
+        Nothing          -> (m2, ar2)
+      (m5, ar5) = case lIncr of
+        Just inc  -> (m4, combineCx ar4 $ if inc > 0 then Right Dummy else Left [ printf "Increment in for loop must be positive integer\n" ])
+        Nothing   -> (m4, ar4)
+      m6 = makeChild m4 Loop
+      (m7, ar7) = semanticVerifyBlock lBody m6 ar5
+      cx1 = combineCx ar7 $ if ty2 == DBool then Right Dummy else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ] in
+        (m, cx1)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression ifCond m ar
-      (m3, ar3) = semanticVerifyBlock ifTrue m ar2
-      (m4, ar4) = semanticVerifyBlock ifFalse m ar3
+      m3 = makeChild m Other
+      (m4, ar4) = semanticVerifyBlock ifTrue m3 ar2
+      (m5, ar5) = semanticVerifyBlock ifFalse m3 ar4
       res = if ty2 == DBool then Right Dummy else Left [ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ]
-      ar5 = combineCx ar4 res in
-        (m, ar5)
+      ar6 = combineCx ar5 res in
+        (m, ar6)
 
 semanticVerifyExpression :: Expression -> Module -> Either [IO ()] Dummy -> (Module, Either [IO ()] Dummy, DataType)
 
