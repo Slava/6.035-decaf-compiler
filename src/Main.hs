@@ -34,6 +34,7 @@ import qualified Parser
 import qualified Scanner
 import qualified SemanticChecker
 
+import qualified LLIR
 
 import qualified Data.Map
 

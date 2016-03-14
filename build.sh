@@ -37,5 +37,6 @@ for package in alex happy; do
 done
 
 cabal install \
+    -j \
     --enable-library-profiling --enable-executable-profiling \
     --alex-options="--ghc --template=\"$TOP/alex\""
