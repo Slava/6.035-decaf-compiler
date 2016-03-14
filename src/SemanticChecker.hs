@@ -6,7 +6,7 @@ import Prelude
 import Text.Printf (printf)
 import ParseTypes
 import qualified Data.Map as HashMap
-import LLIR
+import qualified LLIR
 
 data DataType = DCallout
               | DBool

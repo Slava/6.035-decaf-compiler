@@ -15,13 +15,15 @@ data VType            = VInt
                       | VFunctionDecl VType [VType]
 
 -- Data Types
-data Value            = VFunction
+data Value            = VFunctionp VFunction
                       | VInstruction
                       | VConstant
-                      | VArgument String VType
+                      | VArgumentp VArgument
+
+data VArgument        = VArgument String VType
 
 data VFunction        = VCalloutFunction String VType
-                      | VUserFunction
+                      | VUserFunctionp VUserFunction
 
 data VInstruction     = VFunctionCall VFunction [Value]
                       | VBinOp String Value Value
@@ -32,7 +34,7 @@ data VConstant        = VConstInt Int
 
 data VUserFunction    = VUserFunction {
   arguments :: [VArgument],
-  blocks    :: HashMap String VBlock
+  blocks    :: HashMap.Map String VBlock
 }
 
 data VBlock            = VBlock {
@@ -40,7 +42,7 @@ data VBlock            = VBlock {
 }
 
 data PModule          = PModule {
-  functions :: HashMap String VUserFunction
+  functions :: HashMap.Map String VUserFunction
 }
 
 data Context          = Context {
@@ -57,13 +59,19 @@ data Builder          = Builder {
 appendToBlock :: VInstruction -> VBlock -> VBlock
 appendToBlock instr (VBlock instructions) = VBlock (instructions ++ [instr])
 
-appendInstruction :: VInstruction -> Builder -> Builder
-appendInstruction instr (Builder (PModule functions) context) =
-  let func = HashMap.lookup context.functionName functions
-      block = HashMap.lookup context.blockName func
-      block2 = appendToBlock instr block
-      functions2 = HashMap.insert context.blockName block2 functions in
-    Builder (PModule functions2) context
+appendInstruction instr (Builder (PModule pfunctions) context) =
+  let fm :: Maybe VUserFunction = HashMap.lookup (functionName context) pfunctions in
+    case fm of
+      Just func ->
+        let bm :: Maybe VBlock = HashMap.lookup (blockName context) (blocks func) in
+          case bm of
+            Just block ->
+              let block2 :: VBlock = appendToBlock instr block
+                  func2 :: VUserFunction = VUserFunction (arguments func) (HashMap.insert (blockName context) block2 (blocks func) )
+                  functions2 :: HashMap.Map String VUserFunction = HashMap.insert (functionName context) func2 pfunctions in
+                    Builder (PModule functions2) context
+            Nothing -> Builder (PModule pfunctions) context
+      Nothing -> {- should never occur -} Builder (PModule pfunctions) context
   --
   --
   -- let functions2 :: HashMap String VFunction = do
