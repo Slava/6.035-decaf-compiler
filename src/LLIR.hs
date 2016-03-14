@@ -59,10 +59,23 @@ data Builder          = Builder {
 appendToBlock :: VInstruction -> VBlock -> VBlock
 appendToBlock instr (VBlock instructions) = VBlock (instructions ++ [instr])
 
+appendInstruction :: VInstruction -> Builder -> Builder
 appendInstruction instr (Builder (PModule pfunctions) context) =
-  let fm :: Maybe VUserFunction = HashMap.lookup (functionName context) pfunctions in
+  let updated :: Maybe Builder =
+        do
+          func <- HashMap.lookup (functionName context) pfunctions
+          block <- HashMap.lookup (blockName context) (blocks func)
+          block2 <- return $ appendToBlock instr block
+          func2 <- return $ VUserFunction (arguments func) (HashMap.insert (blockName context) block2 (blocks func) )
+          functions2 <- return $ HashMap.insert (functionName context) func2 pfunctions
+          return $ Builder (PModule functions2) context
+      in case updated of
+        Just builder -> builder
+        Nothing -> Builder (PModule pfunctions) context
+
+{-
     case fm of
-      Just func ->
+      Just func -> HashMap.lookup (functionName context) pfunctions in
         let bm :: Maybe VBlock = HashMap.lookup (blockName context) (blocks func) in
           case bm of
             Just block ->
@@ -72,6 +85,8 @@ appendInstruction instr (Builder (PModule pfunctions) context) =
                     Builder (PModule functions2) context
             Nothing -> Builder (PModule pfunctions) context
       Nothing -> {- should never occur -} Builder (PModule pfunctions) context
+-}
+
   --
   --
   -- let functions2 :: HashMap String VFunction = do
