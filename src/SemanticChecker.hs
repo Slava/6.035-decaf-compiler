@@ -1,17 +1,12 @@
 {-# OPTIONS -Wall #-}
 
 module SemanticChecker where
-import GHC.Generics
 
 import Prelude
 import Text.Printf (printf)
 import ParseTypes
 import qualified Data.Map as HashMap
-
-
-import Data.Aeson
-import Data.Aeson.Encode.Pretty (encodePretty)
-import qualified Data.ByteString.Lazy (putStrLn)
+import LLIR
 
 data DataType = DCallout
               | DBool
@@ -125,7 +120,7 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
   let typ = stringToType stype in
     foldl ( \(m,ar) (name, size) ->
       let ar2 = case size of
-             Just sz -> if sz > 0 then ar else (combineCx ar (Left [printf "Array size must be greater than 0\n"])) 
+             Just sz -> if sz > 0 then ar else (combineCx ar (Left [printf "Array size must be greater than 0\n"]))
              Nothing -> ar
           (m2, success) = addToModule m (createArrayType typ size) name
           res = (if success then Right Dummy else Left [ printf "Could not redefine variable %s\n" name ] )
@@ -136,7 +131,7 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
 semanticVerifyDeclaration (Method rt name args body) m ar =
   let (m2, success) = addToModule m (DFunction (stringToType rt) (map (\(Argument (t,n)) -> Data n (stringToType t)) args)) name
       ar2 = if success then (combineCx ar (Right Dummy)) else (combineCx ar (Left [ printf "Could not redefine function %s\n" name ]))
-      m3 = makeChild m2 (Function $ stringToType rt) 
+      m3 = makeChild m2 (Function $ stringToType rt)
       (m4, ar3) = foldl (\(m,ar) (Argument (t, s)) ->
         let (m2, success) = addToModule m (stringToType t) s
             res = (if success then Right Dummy else Left [ printf "Could not redefine argument %s\n" s ] )
@@ -180,8 +175,8 @@ semanticVerifyStatement (ContinueStatement) m ar =
 
 semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = case expr of
-        Just exp -> semanticVerifyExpression exp m ar 
-        Nothing  -> (m, ar, DVoid) 
+        Just exp -> semanticVerifyExpression exp m ar
+        Nothing  -> (m, ar, DVoid)
       ar3 = case functionTypeLookup m of
         Just t -> if t == typ then (Right Dummy) else Left [printf "Return statement should return type %s, got type %s\n" (show t) (show typ) ]
         Nothing -> Left [printf "Function didn't have return type\n"]
