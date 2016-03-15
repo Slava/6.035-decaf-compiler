@@ -7,7 +7,7 @@ module LLIR where
 -- Imports
 import Prelude
 import Text.Printf (printf)
-import ParseTypes
+--import ParseTypes
 import qualified Data.Map as HashMap
 
 
@@ -123,8 +123,8 @@ uniqueBlockName str func =
   let hm :: HashMap.Map String VBlock = (blocks func)
       inMap :: Bool = HashMap.member str hm in
         case inMap of
-          True -> str
-          False -> uniqueBlockName (str ++ ".1") func
+          False -> str
+          True -> uniqueBlockName (str ++ ".1") func
 
 createID :: PModule -> (String, PModule)
 createID pmod =
@@ -179,11 +179,7 @@ createBlockF :: String -> VFunction -> VFunction
 createBlockF str func =
   let str2 = uniqueBlockName str func
       block = VBlock (functionName func) str2 []
-      oldBlocks = blocks func
-      newBlocks = HashMap.insert str2 block oldBlocks
-      --func2 = func
-      func2 = func{blocks=newBlocks}
-      in func2
+      in func {blocks = HashMap.insert str2 block $ blocks func }
 
 createBlock :: String -> Builder -> Builder
 createBlock str (Builder pmod context) =
@@ -193,7 +189,9 @@ createBlock str (Builder pmod context) =
           func <- HashMap.lookup fn (functions pmod)
           let str2 = uniqueBlockName str func
           block <- return $ VBlock fn str2 []
-          func2 <- return $ func{blocks=(HashMap.insert str2 block (blocks func))}
+          let oldBlocks = blocks func
+          let newBlocks = HashMap.insert str2 block oldBlocks
+          func2 <- return $ func{blocks=newBlocks}
           functions2 <- return $ HashMap.insert fn func2 (functions pmod)
           return $ Builder pmod{functions=functions2} context
       in case updated of

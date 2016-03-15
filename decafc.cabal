@@ -34,7 +34,7 @@ executable decafc
                      , ParseTypes
                      , SemanticChecker
                      , LLIR
-  ghc-options:         -Wall -O3
+  ghc-options:         -Wall -O3 -rtsopts -prof -auto-all -caf-all
   build-depends:       base >=4.8
                      , array ==0.5.*
                      , split ==0.2.*

@@ -32,6 +32,7 @@ for package in alex happy; do
 	cabal install $package \
 	    -j \
 	    --enable-library-profiling --disable-executable-profiling \
+#	    -rtsopts -prof -auto-all -caf-all
 	    --enable-optimization
     fi
 done
@@ -39,4 +40,4 @@ done
 cabal install \
     -j \
     --enable-library-profiling --enable-executable-profiling \
-    --alex-options="--ghc --template=\"$TOP/alex\""
+    --alex-options="--ghc --template=\"$TOP/alex\"" \
