@@ -87,16 +87,6 @@ createArrayType typ Nothing = typ
 
 type Context = Either [IO ()] LLIR.Builder
 
-combineCx :: Context -> Context -> Context
-combineCx cx (Right _) =
-  cx
-
-combineCx (Right _) newCx =
-  newCx
-
-combineCx (Left ls) (Left newLs) =
-  Left (ls ++ newLs)
-
 combineCx2 :: Context -> Bool -> IO () -> Context
 combineCx2 cx True _ =
   cx
@@ -136,7 +126,7 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
   let typ = stringToType stype in
     foldl ( \(m,ar) (name, size) ->
       let ar2 = case size of
-             Just sz -> if sz > 0 then ar else (combineCx ar (Left [printf "Array size must be greater than 0\n"]))
+             Just sz -> combineCx2 ar (sz > 0) $ printf "Array size must be greater than 0\n"
              Nothing -> ar
           (m2, success) = addToModule m (createArrayType typ size) name
           ar3 = combineCx2 ar2 success ( printf "Could not redefine variable %s\n" name )

@@ -62,7 +62,7 @@ instance Value VInstruction where
   getType (VUnOp _ op _ )
     | op == "+"   =  TInt
     | op == "-"   =  TInt
-    | op == "~"   =  TInt
+    -- TODO: Maybe | op == "~"   =  TInt
     | op == "!"   =  TBool
   getType (VBinOp _ op _ _)
     | op == "+"   =  TInt
@@ -181,8 +181,8 @@ createBlockF str func =
       block = VBlock (functionName func) str2 []
       oldBlocks = blocks func
       newBlocks = HashMap.insert str2 block oldBlocks
-      func2 = func
---      func2 = func{blocks=newBlocks}
+      --func2 = func
+      func2 = func{blocks=newBlocks}
       in func2
 
 createBlock :: String -> Builder -> Builder
