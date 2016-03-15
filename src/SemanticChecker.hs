@@ -219,63 +219,56 @@ semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
       (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
       expcTypes = expectedOperandTypes op
       returnType = returnOperatorType op
-      cx1 = combineCx ar3 (if ty2 `elem` expcTypes then Right dummyBuilder else Left [ printf "Incorrect type of left operand for op %s: %s\n" op (show ty2) ])
-      cx2 = combineCx cx1 (if ty3 == ty2 then Right dummyBuilder else Left [ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3)  (show ty2)]) in
-        (m3, cx2, returnType)
+      cx1 = combineCx2 ar3 (ty2 `elem` expcTypes) $ printf "Incorrect type of left operand for op %s: %s\n" op (show ty2)
+      cx2 = combineCx2 cx1 (ty3 == ty2) $ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3) (show ty2)
+      in (m3, cx2, returnType)
 
 semanticVerifyExpression (NegExpression expr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
-      res = if ty2 == DInt then Right dummyBuilder else Left [ printf "Type of negation expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2) ]
-      ar3 = combineCx ar2 res in
-        (m2, ar3, DInt)
+      ar3 = combineCx2 ar2 (ty2 == DInt) $ printf "Type of negation expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2)
+      in (m2, ar3, DInt)
 
 semanticVerifyExpression (NotExpression expr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
-      res = if ty2 == DBool then Right dummyBuilder else Left [printf "Type of not expression incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ]
-      ar3 = combineCx ar2 res in
-        (m2, ar3, DBool)
+      ar3 = combineCx2 ar2 (ty2 == DBool) $ printf "Type of not expression incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
+      in (m2, ar3, DBool)
 
 semanticVerifyExpression (LengthExpression expr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
-      ar3 = combineCx ar2 $ case ty2 of
-         DArray _ _ -> Right dummyBuilder
-         x -> Left [ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2) ]
-      in
-        (m2, ar3, DInt)
+      ar3 = combineCx2 ar2 ((arrayInnerType ty2) /= InvalidType) $ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2)
+      in (m2, ar3, DInt)
 
 semanticVerifyExpression (LiteralExpression lit) m ar =
-  (m, combineCx ar (Right dummyBuilder), litType lit)
+  (m, ar, litType lit)
 
 semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
   case (moduleLookup m name) of
-    Nothing -> (m, combineCx cx (Left [printf "Method or %s not in scope\n" name]), InvalidType)
+    Nothing -> (m, combineCx2 cx False $ printf "Method or %s not in scope\n" name, InvalidType)
     Just (DFunction retType argTypes) ->
-      let res = verifyArgs args argTypes name m cx in
-      (m, res, retType)
+      let res = verifyArgs args argTypes name m cx
+      in (m, res, retType)
     Just DCallout -> (m, cx, DInt)
-    Just a -> (m, combineCx cx (Left [printf "%s is not a callable method\n" name]), InvalidType)
+    Just a -> (m, combineCx2 cx False $ printf "%s is not a callable method\n" name, InvalidType)
 
 semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression cCond m ar
       (m3, ar3, ty3) = semanticVerifyExpression cTrue m2 ar2
       (m4, ar4, ty4) = semanticVerifyExpression cFalse m3 ar3
-      ar5 = combineCx ar4 $ if ty2 == DInt then (Right dummyBuilder) else (Left [ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ])
-      ar6 = combineCx ar5 $ if ty3 == ty4 then (Right dummyBuilder) else (Left [ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4) ]) in
-        (m4, ar6, ty3)
+      ar5 = combineCx2 ar4 (ty2 == DInt) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
+      ar6 = combineCx2 ar5 (ty3 == ty4)  $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4)
+      in (m4, ar6, ty3)
 
 semanticVerifyExpression (LocationExpression loc) m ar =
   case (moduleLookup m loc) of
-    Nothing -> (m, combineCx ar (Left [printf "Variable %s not in scope\n" loc]), InvalidType)
-    Just a  -> (m, combineCx ar (Right dummyBuilder), a)
+    Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" loc, InvalidType)
+    Just a  -> (m, ar, a)
 
 semanticVerifyExpression (LookupExpression loc expr ) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression (LocationExpression loc) m ar
       (m3, ar3, ty3) = semanticVerifyExpression expr m ar
-      ar4 = combineCx ar3 (case ty2 of
-         DArray _ _ -> Right dummyBuilder
-         x -> Left [ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2) ])
-      ar5 = if ty3 == DInt then Right dummyBuilder else Left [ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3) ] in
-        (m3, combineCx ar4 ar5, arrayInnerType ty2)
+      ar4 = combineCx2 ar3 ((arrayInnerType ty2) /= InvalidType) $ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2)
+      ar5 = combineCx2 ar4 (ty3 == DInt) $ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3)
+      in (m3, combineCx ar4 ar5, arrayInnerType ty2)
 
 
 litType :: Literal -> DataType
