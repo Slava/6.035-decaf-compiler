@@ -104,6 +104,10 @@ combineCx2 (Right _) False io =
 combineCx2 (Left ls) False io =
   Left (ls ++ [io])
 
+addInstruction :: Context -> (LLIR.Builder -> LLIR.Builder) -> Context
+addInstruction (Right b) f = Right $ f b
+addInstruction (Left a) _ = Left a
+
 dummyBuilder :: LLIR.Builder
 dummyBuilder = LLIR.createBuilder
 
@@ -125,7 +129,8 @@ semanticVerifyDeclaration :: Declaration -> Module -> Context -> (Module, Contex
 semanticVerifyDeclaration (Callout name) m ar =
   let (m2, success) = addToModule m DCallout name
       ar2 = combineCx2 ar success ( printf "Could not redefine callout %s\n" name )
-      in (m2, ar2)
+      ar3 = addInstruction ar2 $ LLIR.createCallout name
+      in (m2, ar3)
 
 semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
   let typ = stringToType stype in

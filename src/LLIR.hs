@@ -103,7 +103,7 @@ instance Namable VFunction where
 
 data VBlock            = VBlock {
   blockFunctionName :: String,
-  blockName     :: String,
+  blockName         :: String,
   blockInstructions :: [String]
 } deriving (Eq, Show);
 
@@ -112,6 +112,8 @@ instance Namable VBlock where
 
 data PModule          = PModule {
   functions    :: HashMap.Map String VFunction,
+  callouts     :: HashMap.Map String String,
+  globals      :: HashMap.Map String VType,
   lastId       :: Int
 } deriving (Eq, Show);
 
@@ -124,9 +126,9 @@ uniqueBlockName str func =
           False -> uniqueBlockName (str ++ ".1") func
 
 createID :: PModule -> (String, PModule)
-createID (PModule funs lid) =
-  let name :: String = "%" ++ (show (lid+1)) in
-    (name, PModule funs (lid+1))
+createID pmod =
+  let name :: String = "%" ++ (show ((lastId pmod)+1)) in
+    (name, pmod{lastId=((lastId pmod)+1)})
 
 data Context          = Context {
   contextFunctionName :: String,
@@ -210,8 +212,14 @@ createFunction str ty1 argTypes (Builder pmod context) =
       functions2 = HashMap.insert fn func3 (functions pmod) in
         Builder pmod{functions=functions2} context
 
+createCallout :: String -> Builder -> Builder
+createCallout str (Builder pmod context) =
+  let callouts1 = callouts pmod
+      callouts2 = HashMap.insert str str callouts1
+      in (Builder pmod{callouts=callouts2} context)
+
 createPModule :: PModule
-createPModule = PModule (HashMap.empty) 0
+createPModule = PModule (HashMap.empty) (HashMap.empty) (HashMap.empty) 0
 
 createBuilder :: Builder
 createBuilder = Builder createPModule (Context "" "")
