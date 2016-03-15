@@ -113,6 +113,14 @@ data PModule          = PModule {
   lastId       :: Int
 } deriving (Eq, Show);
 
+uniqueBlockName :: String -> VFunction -> String
+uniqueBlockName str func =
+  let hm :: HashMap.Map String VBlock = (blocks func)
+      inMap :: Bool = HashMap.member str hm in
+        case inMap of
+          True -> str
+          False -> uniqueBlockName (str ++ ".1") func
+
 createID :: PModule -> (String, PModule)
 createID (PModule funs lid) =
   let name :: String = "%" ++ (show (lid+1)) in
@@ -161,6 +169,54 @@ createUnaryOp op operand (Builder pmod context) =
       builder2 :: Builder = appendInstruction (VUnOp name op operand) (Builder pmod2 context)
       ref :: ValueRef = InstRef name in
       (ref, builder2)
+
+createBlockF :: String -> VFunction -> VFunction
+createBlockF str func =
+  let updated :: Maybe VFunction =
+        do
+          let str2 = uniqueBlockName str func
+          block <- return $ VBlock (functionName func) str2 []
+          func2 <- return $ func{blocks=(HashMap.insert str2 block (blocks func))}
+          return $ func2
+      in case updated of
+        Just func2 -> func2
+        Nothing -> func
+
+createBlock :: String -> Builder -> Builder
+createBlock str (Builder pmod context) =
+  let updated :: Maybe Builder =
+        do
+          let fn = contextFunctionName context
+          func <- HashMap.lookup fn (functions pmod)
+          let str2 = uniqueBlockName str func
+          block <- return $ VBlock fn str2 []
+          func2 <- return $ func{blocks=(HashMap.insert str2 block (blocks func))}
+          functions2 <- return $ HashMap.insert fn func2 (functions pmod)
+          return $ Builder pmod{functions=functions2} context
+      in case updated of
+        Just builder -> builder
+        Nothing -> Builder pmod context
+
+{-
+
+functionName      :: String,
+returnType        :: VType,
+arguments         :: [VType],
+functionInstructions :: HashMap.Map String VInstruction,
+blocks    :: HashMap.Map String VBlock
+-}
+-- assume no function exists with name currently
+createFunction :: String -> VType -> [VType] -> Builder -> Builder
+createFunction str ty1 argTypes (Builder pmod context) =
+  let fn = contextFunctionName context
+      func = VFunction str ty1 argTypes (HashMap.empty) (HashMap.empty)
+      func2 = createBlockF "entry" func
+      instrs = foldl ( \acc (idx, typ) -> HashMap.insert ("$a" ++ (show idx)) (VArgument ("$a" ++ (show idx)) idx typ ) acc) (functionInstructions func) ( zip [0..] argTypes )
+      func3 = func2{functionInstructions=instrs}
+      functions2 = HashMap.insert fn func3 (functions pmod) in
+        Builder pmod{functions=functions2} context
+
+--        -}
 
 -- TODO createFunction
 -- TODO create Other ops
