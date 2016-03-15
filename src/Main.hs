@@ -132,7 +132,9 @@ semanticCheck configuration input = do
       let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) (Right SemanticChecker.Dummy)
       case asts of
         Left errors -> Right errors
-        Right a -> Right []
+        Right llir ->
+          let hOutput = maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration in
+            Right [hPutStrLn hOutput (show llir), hClose hOutput ]
 
 printAst :: Configuration -> String -> Either String [IO ()]
 printAst configuration input = do

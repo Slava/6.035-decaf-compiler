@@ -16,7 +16,7 @@ data VType            = TInt
                       | TString
                       | TFunction VType [VType]
                       | TCallout
-                      | TBlock
+                      | TPointer VType
                       deriving (Eq, Show);
 
 class Namable a where
@@ -39,11 +39,15 @@ instance Value VConstant where
 
 data ValueRef = InstRef String
               | ConstRef VConstant
+              | BlockRef String
+              | CalloutRef String
+              | FunctionRef String
   deriving(Eq, Show);
 
 data VInstruction = VArgument String {- index -} Int VType
                   | VUnOp {- name -} String {- operand -} String {- argument name -} ValueRef
                   | VBinOp {- name -} String {- operand -} String {- argument name -} ValueRef ValueRef
+                  | VTBD
   deriving (Eq, Show);
 
 instance Namable VInstruction where
@@ -52,6 +56,7 @@ instance Namable VInstruction where
   getName (VBinOp name _ _ _ ) = name
 
 instance Value VInstruction where
+  getType (VTBD) = TInt
   getType (VArgument _ _ typ ) = typ
   getType (VUnOp _ op _ )
     | op == "+"   =  TInt
@@ -101,9 +106,6 @@ data VBlock            = VBlock {
   blockName     :: String,
   blockInstructions :: [String]
 } deriving (Eq, Show);
-
-instance Value VBlock where
-  getType _ = TBlock
 
 instance Namable VBlock where
   getName block = (blockName block)
@@ -197,14 +199,6 @@ createBlock str (Builder pmod context) =
         Just builder -> builder
         Nothing -> Builder pmod context
 
-{-
-
-functionName      :: String,
-returnType        :: VType,
-arguments         :: [VType],
-functionInstructions :: HashMap.Map String VInstruction,
-blocks    :: HashMap.Map String VBlock
--}
 -- assume no function exists with name currently
 createFunction :: String -> VType -> [VType] -> Builder -> Builder
 createFunction str ty1 argTypes (Builder pmod context) =
@@ -216,6 +210,11 @@ createFunction str ty1 argTypes (Builder pmod context) =
       functions2 = HashMap.insert fn func3 (functions pmod) in
         Builder pmod{functions=functions2} context
 
+createPModule :: PModule
+createPModule = PModule (HashMap.empty) 0
+
+createBuilder :: Builder
+createBuilder = Builder createPModule (Context "" "")
 --        -}
 
 -- TODO createFunction

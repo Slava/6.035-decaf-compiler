@@ -87,10 +87,10 @@ data Dummy = Dummy deriving(Eq, Show)
 type Context = Either [IO ()] Dummy
 
 combineCx :: Context -> Context -> Context
-combineCx cx (Right Dummy) =
+combineCx cx (Right _) =
   cx
 
-combineCx (Right Dummy) newCx =
+combineCx (Right _) newCx =
   newCx
 
 combineCx (Left ls) (Left newLs) =
