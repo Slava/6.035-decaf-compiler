@@ -111,9 +111,6 @@ addInstruction :: Context -> (LLIR.Builder -> LLIR.Builder) -> Context
 addInstruction (Right b) f = Right $ f b
 addInstruction (Left a) _ = Left a
 
-dummyBuilder :: LLIR.Builder
-dummyBuilder = LLIR.createBuilder
-
 maybeToError :: Context -> Maybe a -> IO () -> Either [IO()] a
 maybeToError _ (Just a) _ = Right a
 maybeToError (Left ls) Nothing io = Left (ls ++ [io])
