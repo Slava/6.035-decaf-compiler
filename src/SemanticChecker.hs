@@ -69,6 +69,9 @@ makeChild m s = Module (Just m) HashMap.empty s
 stringToType :: Type -> DataType
 stringToType (Type n) = if n == "int" then DInt else if n == "boolean" then DBool else if n == "void" then DVoid else InvalidType
 
+stringToVType :: Type -> LLIR.VType
+stringToVType (Type n) = if n == "int" then LLIR.TInt else if n == "boolean" then LLIR.TBool else LLIR.TVoid
+
 arrayInnerType :: DataType -> DataType
 arrayInnerType (DArray n _) = n
 arrayInnerType DCallout = InvalidType
@@ -152,7 +155,8 @@ semanticVerifyDeclaration (Method rt name args body) m ar =
             ar2 = combineCx2 ar success ( printf "Could not redefine argument %s\n" s )
             in (m2, ar2)
         ) (m3, ar2) args
-      block = semanticVerifyBlock body m4 ar3 in
+      ar4 = addInstruction ar3 $ LLIR.createFunction name (stringToVType rt) (map (\(Argument (t,n)) -> (stringToVType t)) args)
+      block = semanticVerifyBlock body m4 ar4 in
         block
 
 semanticVerifyBlock :: Block -> Module -> Context -> (Module, Context)

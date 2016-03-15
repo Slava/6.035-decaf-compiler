@@ -15,6 +15,7 @@ data VType            = TInt
                       | TBool
                       | TString
                       | TFunction VType [VType]
+                      | TVoid
                       | TCallout
                       | TPointer VType
                       deriving (Eq, Show);
@@ -176,15 +177,13 @@ createUnaryOp op operand (Builder pmod context) =
 
 createBlockF :: String -> VFunction -> VFunction
 createBlockF str func =
-  let updated :: Maybe VFunction =
-        do
-          let str2 = uniqueBlockName str func
-          block <- return $ VBlock (functionName func) str2 []
-          func2 <- return $ func{blocks=(HashMap.insert str2 block (blocks func))}
-          return $ func2
-      in case updated of
-        Just func2 -> func2
-        Nothing -> func
+  let str2 = uniqueBlockName str func
+      block = VBlock (functionName func) str2 []
+      oldBlocks = blocks func
+      newBlocks = HashMap.insert str2 block oldBlocks
+      func2 = func
+--      func2 = func{blocks=newBlocks}
+      in func2
 
 createBlock :: String -> Builder -> Builder
 createBlock str (Builder pmod context) =
@@ -204,12 +203,11 @@ createBlock str (Builder pmod context) =
 -- assume no function exists with name currently
 createFunction :: String -> VType -> [VType] -> Builder -> Builder
 createFunction str ty1 argTypes (Builder pmod context) =
-  let fn = contextFunctionName context
-      func = VFunction str ty1 argTypes (HashMap.empty) (HashMap.empty)
+  let func = VFunction str ty1 argTypes (HashMap.empty) (HashMap.empty)
       func2 = createBlockF "entry" func
-      instrs = foldl ( \acc (idx, typ) -> HashMap.insert ("$a" ++ (show idx)) (VArgument ("$a" ++ (show idx)) idx typ ) acc) (functionInstructions func) ( zip [0..] argTypes )
+      instrs = foldl ( \acc (idx, typ) -> HashMap.insert ("$a" ++ (show idx)) (VArgument ("$a" ++ (show idx)) idx typ ) acc) (functionInstructions func) ( zip [0..(length argTypes)] argTypes )
       func3 = func2{functionInstructions=instrs}
-      functions2 = HashMap.insert fn func3 (functions pmod) in
+      functions2 = HashMap.insert str func3 (functions pmod) in
         Builder pmod{functions=functions2} context
 
 createCallout :: String -> Builder -> Builder
