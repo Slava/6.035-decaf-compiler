@@ -123,9 +123,8 @@ semanticVerifyProgram (Program p) m =
 semanticVerifyDeclaration :: Declaration -> Module -> Context -> (Module, Context)
 semanticVerifyDeclaration (Callout name) m ar =
   let (m2, success) = addToModule m DCallout name
-      res = (if success then Right dummyBuilder else Left [ printf "Could not redefine callout %s\n" name ] )
-      ar2 = (combineCx ar res) in
-      (m2, ar2)
+      ar2 = combineCx2 ar (if success then Nothing else printf "Could not redefine callout %s\n" name )
+      in (m2, ar2)
 
 semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
   let typ = stringToType stype in
