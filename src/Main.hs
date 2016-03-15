@@ -129,7 +129,7 @@ semanticCheck configuration input = do
   case (Parser.parse tokens) of
     Left  a -> Left a
     Right ast -> do
-      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) (Right SemanticChecker.Dummy)
+      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other)
       case asts of
         Left errors -> Right errors
         Right llir -> Right $ [ do
