@@ -190,28 +190,26 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lCond m ar
       (m4, ar4) = case lInit of
         Just (id, expr)  ->
-          case (moduleLookup m2 id) of
-            Just _  ->
-              let (m3, ar3, ty3) = semanticVerifyExpression expr m2 ar2 in
-                (m3, combineCx ar3 $ if ty3 == DInt then Right dummyBuilder else Left [ printf "Initializer in loop must be of type int, got type %s\n" (show ty3) ])
-            Nothing -> (m2, combineCx ar2 $ Left [ printf "Identifier in loop assignment not defined\n" ])
+          let ar3 = combineCx2 ar2 ((moduleLookup m2 id)/=Nothing) (printf "Identifier in loop assignment not defined\n")
+              (m3, ar4, ty3) = semanticVerifyExpression expr m2 ar3
+              ar5 = combineCx2 ar4 (ty3==DInt) (printf "Initializer in loop must be of type int, got type %s\n" (show ty3))
+              in (m3, ar5)
         Nothing          -> (m2, ar2)
       (m5, ar5) = case lIncr of
-        Just inc  -> (m4, combineCx ar4 $ if inc > 0 then Right dummyBuilder else Left [ printf "Increment in for loop must be positive integer\n" ])
+        Just inc  -> (m4, combineCx2 ar4 (inc > 0) (printf "Increment in for loop must be positive integer\n") )
         Nothing   -> (m4, ar4)
       m6 = makeChild m4 Loop
       (m7, ar7) = semanticVerifyBlock lBody m6 ar5
-      cx1 = combineCx ar7 $ if ty2 == DBool then Right dummyBuilder else Left [ printf "Loop condition expected expression of type bool but got %s\n" (show ty2) ] in
-        (m, cx1)
+      cx1 = combineCx2 ar7 (ty2 == DBool) $ printf "Loop condition expected expression of type bool but got %s\n" (show ty2)
+      in (m, cx1)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression ifCond m ar
       m3 = makeChild m Other
       (m4, ar4) = semanticVerifyBlock ifTrue m3 ar2
       (m5, ar5) = semanticVerifyBlock ifFalse m3 ar4
-      res = if ty2 == DBool then Right dummyBuilder else Left [ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2) ]
-      ar6 = combineCx ar5 res in
-        (m, ar6)
+      ar6 = combineCx2 ar5 (ty2==DBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
+      in (m, ar6)
 
 semanticVerifyExpression :: Expression -> Module -> Context -> (Module, Context, DataType)
 
