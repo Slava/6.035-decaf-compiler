@@ -325,14 +325,11 @@ verifyArgs args argTypes methodName m cx =
   else
     let l = zip args argTypes in
     foldl (\cx (arg, (Data name t)) -> case arg of
-              CalloutStringLit lit -> combineCx cx (checkArg DString t name methodName)
+              CalloutStringLit lit -> combineCx2 cx (DString==t) $ checkArg DString t name methodName
               CalloutExpression expr ->
                 let (m2, cx2, exprType) = (semanticVerifyExpression expr m cx) in
-                combineCx cx2 (checkArg exprType t name methodName)
+                combineCx2 cx2 (exprType==t) $ checkArg exprType t name methodName
               ) cx l
 
 checkArg passedType origType name methodName =
-  if passedType == origType then
-    Right dummyBuilder
-  else
-    Left [(printf "Wrong type of passed argument %s for method call %s: %s when %s is expected\n" name methodName (show passedType) (show origType))]
+  printf "Wrong type of passed argument %s for method call %s: %s when %s is expected\n" name methodName (show passedType) (show origType)
