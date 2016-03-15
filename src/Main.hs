@@ -33,6 +33,7 @@ import qualified Configuration
 import qualified Parser
 import qualified Scanner
 import qualified SemanticChecker
+import qualified CodeGen
 
 import qualified LLIR
 
@@ -97,6 +98,7 @@ process configuration input =
     Scan -> scan configuration input
     Parse -> parse configuration input
     Inter -> semanticCheck configuration input
+    Assembly -> codeGen configuration input
     AST -> printAst configuration input
     phase -> Left $ show phase ++ " not implemented\n"
 
@@ -137,6 +139,28 @@ semanticCheck configuration input = do
             hPutStrLn hOutput (show $ LLIR.pmod asts)
             hClose hOutput
           ]
+        Right a -> Right []
+
+codeGen :: Configuration -> String -> Either String [IO ()]
+codeGen configuration input = do
+  let (errors, tokens) = partitionEithers $ Scanner.scan input
+  -- If errors occurred, bail out.
+  mapM_ (mungeErrorMessage configuration . Left) errors
+  -- Otherwise, attempt a parse.
+  case (Parser.parse tokens) of
+    Left  a -> Left a
+    Right ast -> do
+      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) (Right SemanticChecker.Dummy)
+      case asts of
+        Left errors -> Right errors
+        Right a -> do
+          let asm = CodeGen.gen asts
+          let maybePath = Configuration.outputFileName configuration
+          case maybePath of
+            Just path -> Right [writeFile path asm]
+            Nothing -> Right [putStrLn asm]
+
+
 printAst :: Configuration -> String -> Either String [IO ()]
 printAst configuration input = do
   let (errors, tokens) = partitionEithers $ Scanner.scan input
