@@ -277,7 +277,7 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
       (m3, ar3, ty3) = semanticVerifyExpression expr m ar
       ar4 = combineCx2 ar3 ((arrayInnerType ty2) /= InvalidType) $ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2)
       ar5 = combineCx2 ar4 (ty3 == DInt) $ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3)
-      in (m3, combineCx ar4 ar5, arrayInnerType ty2)
+      in (m3, ar5, arrayInnerType ty2)
 
 
 litType :: Literal -> DataType
