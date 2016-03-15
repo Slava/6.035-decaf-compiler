@@ -94,36 +94,37 @@ combineCx (Right _) newCx =
 combineCx (Left ls) (Left newLs) =
   Left (ls ++ newLs)
 
-combineCx2 :: Context -> Maybe (IO ()) -> Context
-combineCx2 cx Nothing =
+combineCx2 :: Context -> Bool -> IO () -> Context
+combineCx2 cx True _ =
   cx
 
-combineCx2 (Right _ ) (Just io) =
+combineCx2 (Right _) False io =
   Left [io]
 
-combineCx2 (Left ls) (Just io) =
+combineCx2 (Left ls) False io =
   Left (ls ++ [io])
 
 dummyBuilder :: LLIR.Builder
 dummyBuilder = LLIR.createBuilder
 
-maybeToError :: Maybe a -> IO () -> Either [IO()] a
-maybeToError (Just a) _ = Right a
-maybeToError Nothing io = Left [io]
+maybeToError :: Context -> Maybe a -> IO () -> Either [IO()] a
+maybeToError _ (Just a) _ = Right a
+maybeToError (Left ls) Nothing io = Left (ls ++ [io])
+maybeToError (Right _) Nothing io = Left [io]
 
 semanticVerifyProgram :: Program -> Module -> (Module, Context)
 semanticVerifyProgram (Program p) m =
   let builder = LLIR.createBuilder
       (m2, d2) = foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, Right builder) p
       d3 = do
-        typ <- maybeToError (moduleLookup m2 "main") (printf "Program does not contain main method\n")
-        combineCx2 d2 ( if ( typ == (DFunction DInt []) ) || ( typ == (DFunction DBool []) ) || ( typ == (DFunction DVoid []) ) then Nothing else Just $ printf "Main declared as incorrect type: expected %s got %s\n" (show (DFunction DVoid [])) (show typ) )
+        typ <- maybeToError d2 (moduleLookup m2 "main") (printf "Program does not contain main method\n")
+        combineCx2 d2 ( ( typ == (DFunction DInt []) ) || ( typ == (DFunction DBool []) ) || ( typ == (DFunction DVoid []) ) ) (printf "Main declared as incorrect type: expected %s got %s\n" (show (DFunction DVoid [])) (show typ) )
       in (m2, d3)
 
 semanticVerifyDeclaration :: Declaration -> Module -> Context -> (Module, Context)
 semanticVerifyDeclaration (Callout name) m ar =
   let (m2, success) = addToModule m DCallout name
-      ar2 = combineCx2 ar (if success then Nothing else printf "Could not redefine callout %s\n" name )
+      ar2 = combineCx2 ar success ( printf "Could not redefine callout %s\n" name )
       in (m2, ar2)
 
 semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
@@ -133,29 +134,27 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
              Just sz -> if sz > 0 then ar else (combineCx ar (Left [printf "Array size must be greater than 0\n"]))
              Nothing -> ar
           (m2, success) = addToModule m (createArrayType typ size) name
-          res = (if success then Right dummyBuilder else Left [ printf "Could not redefine variable %s\n" name ] )
-          ar3 = (combineCx ar2 res) in
-          (m2, ar3)
+          ar3 = combineCx2 ar2 success ( printf "Could not redefine variable %s\n" name )
+          in (m2, ar3)
     ) (m, ar) fields
 
 semanticVerifyDeclaration (Method rt name args body) m ar =
   let (m2, success) = addToModule m (DFunction (stringToType rt) (map (\(Argument (t,n)) -> Data n (stringToType t)) args)) name
-      ar2 = if success then (combineCx ar (Right dummyBuilder)) else (combineCx ar (Left [ printf "Could not redefine function %s\n" name ]))
+      ar2 = combineCx2 ar success ( printf "Could not redefine function %s\n" name )
       m3 = makeChild m2 (Function $ stringToType rt)
       (m4, ar3) = foldl (\(m,ar) (Argument (t, s)) ->
         let (m2, success) = addToModule m (stringToType t) s
-            res = (if success then Right dummyBuilder else Left [ printf "Could not redefine argument %s\n" s ] )
-            ar2 = combineCx ar res in
-            (m2, ar2)
+            ar2 = combineCx2 ar success ( printf "Could not redefine argument %s\n" s )
+            in (m2, ar2)
         ) (m3, ar2) args
       block = semanticVerifyBlock body m4 ar3 in
         block
 
 semanticVerifyBlock :: Block -> Module -> Context -> (Module, Context)
 semanticVerifyBlock (Block (decls, statements)) m ar =
-  let (m2, ar2) = (foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, ar) decls) in
-    let (m3, ar3) = (foldl (\acc x -> semanticVerifyStatement x (fst acc) (snd acc)) (m2, ar2) statements) in
-      (m3, ar3)
+  let (m2, ar2) = (foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, ar) decls)
+      (m3, ar3) = (foldl (\acc x -> semanticVerifyStatement x (fst acc) (snd acc)) (m2, ar2) statements)
+      in (m3, ar3)
 
 {-(map (Right . Data.ByteString.Lazy.putStrLn . encodePretty) decls ) ++ -}
 
@@ -163,35 +162,29 @@ semanticVerifyStatement :: Statement -> Module -> Context -> (Module, Context)
 semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
       (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
-      res = if ty2 == ty3 then (Right dummyBuilder) else Left [printf "Type of assignment incorrect -- expected %s, received %s\n" (show ty2) (show ty3) ]
-      ar4 = combineCx ar3 res in
-        (m3, ar4)
+      ar4 = combineCx2 ar3 (ty2==ty3) ( printf "Type of assignment incorrect -- expected %s, received %s\n" (show ty2) (show ty3) )
+      in (m3, ar4)
 
 semanticVerifyStatement (MethodCallStatement methodCall) m ar =
- let (m2, ar2, t) = semanticVerifyExpression (MethodCallExpression methodCall) m ar in
- (m2, ar2)
+  let (m2, ar2, t) = semanticVerifyExpression (MethodCallExpression methodCall) m ar
+  in (m2, ar2)
 
 semanticVerifyStatement (BreakStatement) m ar =
-  -- TODO: should check that the break statement is within a loop
-  let res = if scopeLookup m == Just Loop then (Right dummyBuilder) else Left [printf "Break statements must occur in loop\n"]
-      ar2 = combineCx ar res in
-        (m, ar2)
+  let ar2 = combineCx2 ar (scopeLookup m == Just Loop) (printf "Break statements must occur in loop\n")
+  in (m, ar2)
 
 semanticVerifyStatement (ContinueStatement) m ar =
-  -- TODO: should check that the break statement is within a loop
-  let res = if scopeLookup m == Just Loop then (Right dummyBuilder) else Left [printf "Continue statements must occur in loop\n"]
-      ar2 = combineCx ar res in
-        (m, ar2)
+  let ar2 = combineCx2 ar (scopeLookup m == Just Loop) (printf "Continue statements must occur in loop\n")
+  in (m, ar2)
 
 semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = case expr of
         Just exp -> semanticVerifyExpression exp m ar
         Nothing  -> (m, ar, DVoid)
-      ar3 = case functionTypeLookup m of
-        Just t -> if t == typ then (Right dummyBuilder) else Left [printf "Return statement should return type %s, got type %s\n" (show t) (show typ) ]
-        Nothing -> Left [printf "Function didn't have return type\n"]
-      cx1 = combineCx ar2 ar3 in
-        (m, cx1)
+      ar3 = do
+        t <- maybeToError ar2 (functionTypeLookup m) (printf "Function didn't have return type")
+        combineCx2 ar2 (t == typ) ( printf "Return statement should return type %s, got type %s\n" (show t) (show typ) )
+      in (m, ar3)
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression lCond m ar
