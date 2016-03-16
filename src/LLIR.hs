@@ -48,21 +48,33 @@ data ValueRef = InstRef String
 data VInstruction = VArgument String {- index -} Int VType
                   | VUnOp {- name -} String {- operand -} String {- argument name -} ValueRef
                   | VBinOp {- name -} String {- operand -} String {- argument name -} ValueRef ValueRef
-                  | VTBD
+                  | VAssignment String String VType ValueRef ValueRef
+                  | VLookup String
+                  | VAllocation String
+                  | VArrayLookup String
+                  | VArrayLen String
+                  | VReturn String
+                  | VCondBranch String
+                  | VUncondBranch String
   deriving (Eq, Show);
 
 instance Namable VInstruction where
   getName (VArgument name _ _ ) = name
   getName (VUnOp name _ _ ) = name
   getName (VBinOp name _ _ _ ) = name
+  getName (VAssignment name _ _ _) = name
+  getName (VLookup name) = name
+  getName (VAllocation name) = name
+  getName (VArrayLookup name) = name
+  getName (VArrayLen name) = name
+  getName (VReturn name) = name
+  getName (VCondBranch name) = name
+  getName (VUncondBranch name) = name
 
 instance Value VInstruction where
-  getType (VTBD) = TInt
   getType (VArgument _ _ typ ) = typ
   getType (VUnOp _ op _ )
-    | op == "+"   =  TInt
     | op == "-"   =  TInt
-    -- TODO: Maybe | op == "~"   =  TInt
     | op == "!"   =  TBool
   getType (VBinOp _ op _ _)
     | op == "+"   =  TInt
@@ -78,6 +90,14 @@ instance Value VInstruction where
     | op == "!="  =  TBool
     | op == "&"  =  TBool
     | op == "|"  =  TBool
+  getType (VAssignment _ _ typ _ _) = typ
+  -- getType (VLookup) =
+  -- getType (VAllocation) =
+  -- getType (VArrayLookup) =
+  -- getType (VArrayLen) =
+  -- getType (VReturn) =
+  -- getType (VCondBranch) =
+  -- getType (VUncondBranch) =
 
 data VCallout = VCallout String
   deriving(Eq, Show);
@@ -168,10 +188,17 @@ appendInstruction instr (Builder pmod context) =
         Just builder -> builder
         Nothing -> Builder pmod context
 
-createUnaryOp :: {-Operand-} String -> ValueRef -> Builder ->(ValueRef,Builder)
+createUnaryOp :: {-Operand-} String -> ValueRef -> Builder -> (ValueRef,Builder)
 createUnaryOp op operand (Builder pmod context) =
   let (name, pmod2) :: (String, PModule) = createID pmod
       builder2 :: Builder = appendInstruction (VUnOp name op operand) (Builder pmod2 context)
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createBinOp :: String -> ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
+createBinOp op operand1 operand2 (Builder pmod context) =
+  let (name, pmod2) :: (String, PModule) - createID pmod
+      builder2 :: Builder = appendInstruction (VBinOp name op operand1 operand2) (Builder pmod2 context)
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
@@ -219,31 +246,3 @@ createPModule = PModule (HashMap.empty) (HashMap.empty) (HashMap.empty) 0
 
 createBuilder :: Builder
 createBuilder = Builder createPModule (Context "" "")
---        -}
-
--- TODO createFunction
--- TODO create Other ops
-
-{-
-    case fm of
-      Just func -> HashMap.lookup (functionName context) pfunctions in
-        let bm :: Maybe VBlock = HashMap.lookup (blockName context) (blocks func) in
-          case bm of
-            Just block ->
-              let block2 :: VBlock = appendToBlock instr block
-                  func2 :: VUserFunction = VUserFunction (arguments func) (HashMap.insert (blockName context) block2 (blocks func) )
-                  functions2 :: HashMap.Map String VUserFunction = HashMap.insert (functionName context) func2 pfunctions in
-                    Builder (PModule functions2) context
-            Nothing -> Builder (PModule pfunctions) context
-      Nothing -> {- should never occur -} Builder (PModule pfunctions) context
--}
-
-  --
-  --
-  -- let functions2 :: HashMap String VFunction = do
-  --   func :: VFunction <- HashMap.lookup context.functionName functions
-  --   let block2 :: VBlock = do
-  --     block :: VBlock <- HashMap.lookup context.blockName func
-  --     return $ appendToBlock instr block
-  --   return $ HashMap.insert context.blockName block2 functions in
-  -- Builder (PModule functions2) context
