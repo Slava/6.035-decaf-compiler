@@ -23,12 +23,33 @@ data DataType = DCallout
 typeToVType :: DataType -> LLIR.VType
 typeToVType DCallout        = LLIR.TCallout
 typeToVType DBool           = LLIR.TBool
+typeToVType DInt            = LLIR.TInt
 typeToVType (DArray a _ )   = LLIR.TArray $ typeToVType a
 typeToVType (DFunction a b) = LLIR.TFunction ( typeToVType a ) ( map (\(Data _ a) -> typeToVType a ) b )
 typeToVType DVoid           = LLIR.TVoid
 typeToVType DString         = LLIR.TString
 typeToVType DChar           = LLIR.TVoid
 typeToVType InvalidType     = LLIR.TVoid
+
+{-
+data VType            = TInt
+                      | TBool
+                      | TString
+                      | TFunction VType [VType]
+                      | TVoid
+                      | TCallout
+                      | TArray VType
+                      | TPointer VType
+-}
+vTypeToType :: LLIR.VType -> DataType
+vTypeToType LLIR.TCallout        = DCallout
+vTypeToType LLIR.TBool           = DBool
+vTypeToType LLIR.TInt            = DInt
+vTypeToType LLIR.TString         = DString
+vTypeToType LLIR.TVoid           = DVoid
+vTypeToType (LLIR.TArray a )   = DArray (vTypeToType a) Nothing
+vTypeToType (LLIR.TFunction a b) = DFunction ( vTypeToType a ) ( map (\a -> Data "str" $ vTypeToType a ) b )
+vTypeToType (LLIR.TPointer _)       = InvalidType
 
 data ScopeType = Loop
                | Function DataType
@@ -42,18 +63,18 @@ data Data = Data {
 
 data Module = Module {
   parent     :: Maybe Module,
-  lookup     :: HashMap.Map String Data,
+  lookup     :: HashMap.Map String LLIR.ValueRef,
   scopeType  :: ScopeType
 } deriving (Eq, Show)
 
-addToModule :: Module -> DataType -> String -> (Module, Bool {- if failed -} )
+addToModule :: Module -> LLIR.ValueRef -> String -> (Module, Bool {- if failed -} )
 addToModule (Module parent lookup scopeType) dtype dname =
-  ( Module parent ( HashMap.insert dname (Data dname dtype) lookup ) scopeType , not $ HashMap.member dname lookup )
+  ( Module parent ( HashMap.insert dname dtype lookup ) scopeType , not $ HashMap.member dname lookup )
 
-moduleLookup :: Module -> String -> Maybe DataType
+moduleLookup :: Module -> String -> Maybe LLIR.ValueRef
 moduleLookup (Module parent m _) s =
   case HashMap.lookup s m of
-    Just (Data _ a) -> Just a
+    Just a -> Just a
     Nothing -> case parent of
       Just a -> moduleLookup a s
       Nothing -> Nothing
@@ -96,72 +117,88 @@ createArrayType :: DataType -> Maybe Int -> DataType
 createArrayType typ (Just size) = DArray typ (Just size)
 createArrayType typ Nothing = typ
 
-type Context = Either [IO ()] LLIR.Builder
+data Context = Context {
+  contextErrors  :: [IO ()],
+  contextBuilder ::LLIR.Builder
+}
+
+getType :: Context -> (LLIR.ValueRef) -> LLIR.VType
+getType (Context errs builder) vref = LLIR.getType builder vref
 
 combineCx2 :: Context -> Bool -> IO () -> Context
-combineCx2 cx True _ =
-  cx
+combineCx2 cx True _ = cx
+combineCx2 (Context ios bld) False io = Context (ios ++ [io]) bld
 
-combineCx2 (Right _) False io =
-  Left [io]
+combineCxE :: Context -> Bool -> IO () -> Either Context Context
+combineCxE cx True _ = Right cx
+combineCxE (Context ios bld) False io = Left $ Context (ios ++ [io]) bld
 
-combineCx2 (Left ls) False io =
-  Left (ls ++ [io])
+unify :: Either Context Context -> Context
+unify (Left a)  = a
+unify (Right a) = a
+
+addDebug :: Context -> (IO() ) -> Context
+addDebug (Context ios b) io = Context ios $ LLIR.addDebug b io
 
 addInstruction :: Context -> (LLIR.Builder -> LLIR.Builder) -> Context
-addInstruction (Right b) f = Right $ f b
-addInstruction (Left a) _ = Left a
+addInstruction (Context ios b) f =
+  let builder = b--LLIR.addDebug b $ printf "adding instruction \n"
+      in (Context ios $ f builder)
 
 addInstruction2 :: Context -> (LLIR.Builder -> (LLIR.ValueRef, LLIR.Builder) ) -> (LLIR.ValueRef,Context)
-addInstruction2 (Right b) f = let (ref,bld) = f b in (ref,Right bld)
-addInstruction2 (Left a) _  = (LLIR.ConstInt 0, Left a)
+addInstruction2 (Context ios b) f =
+  let (ref, b2) = f b
+      builder = b2--LLIR.addDebug b2 $ printf "adding instruction2\n"
+      in (ref, (Context ios builder))
 
-maybeToError :: Context -> Maybe a -> IO () -> Either [IO()] a
-maybeToError _ (Just a) _ = Right a
-maybeToError (Left ls) Nothing io = Left (ls ++ [io])
-maybeToError (Right _) Nothing io = Left [io]
+maybeToError :: Context -> Maybe a -> IO () -> Either Context a
+maybeToError (Context ios b) Nothing io = Left $ Context (ios++[io]) b
+maybeToError (Context ios b) (Just a) _ = Right a
 
 semanticVerifyProgram :: Program -> Module -> (Module, Context)
 semanticVerifyProgram (Program p) m =
   let builder = LLIR.createBuilder
-      (m2, d2) = foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, Right builder) p
-      d3 = do
-        typ <- maybeToError d2 (moduleLookup m2 "main") (printf "Program does not contain main method\n")
-        combineCx2 d2 ( ( typ == (DFunction DInt []) ) || ( typ == (DFunction DBool []) ) || ( typ == (DFunction DVoid []) ) ) (printf "Main declared as incorrect type: expected %s got %s\n" (show (DFunction DVoid [])) (show typ) )
+      (m2, d2) = foldl (\acc x -> semanticVerifyDeclaration x (fst acc) (snd acc)) (m, Context [] builder) p
+      d3 = unify $ do
+        func <- maybeToError d2 (moduleLookup m2 "main") (printf "Program does not contain main method\n")
+        let typ = getType d2 func
+        combineCxE d2 ( ( typ == (LLIR.TFunction LLIR.TInt []) ) || ( typ == (LLIR.TFunction LLIR.TBool []) ) || ( typ == (LLIR.TFunction LLIR.TVoid []) ) ) (printf "Main declared as incorrect type: expected %s got %s\n" (show (LLIR.TFunction LLIR.TVoid [])) (show typ) )
       in (m2, d3)
 
 semanticVerifyDeclaration :: Declaration -> Module -> Context -> (Module, Context)
 semanticVerifyDeclaration (Callout name) m ar =
-  let (m2, success) = addToModule m DCallout name
+  let (m2, success) = addToModule m (LLIR.CalloutRef name) name
       ar2 = combineCx2 ar success ( printf "Could not redefine callout %s\n" name )
       ar3 = addInstruction ar2 $ LLIR.createCallout name
       in (m2, ar3)
 
 semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
-  let typ = stringToType stype in
-    foldl ( \(m,ar) (name, size) ->
-      let ar2 = case size of
-             Just sz -> combineCx2 ar (sz > 0) $ printf "Array size must be greater than 0\n"
-             Nothing -> ar
-          addFunc = if (scopeType m)==Other then LLIR.createGlobal name else LLIR.createAlloca
-          (val, ar3) = addInstruction2 ar2 $ addFunc (typeToVType typ) size
-          (m2, success) = addToModule m (createArrayType typ size) name
-          ar4 = combineCx2 ar3 success ( printf "Could not redefine variable %s\n" name )
-          in (m2, ar4)
-    ) (m, ar) fields
+  let typ = stringToType stype
+      (mf, arf) = foldl ( \(m,ar) (name, size) ->
+          let ar2 = case size of
+                 Just sz -> combineCx2 ar (sz > 0) $ printf "Array size must be greater than 0\n"
+                 Nothing -> ar
+              addFunc = if (scopeType m)==Other then LLIR.createGlobal name else LLIR.createAlloca
+              (val, ar3) = addInstruction2 ar2 $ addFunc (typeToVType typ) size
+              (m2, success) = addToModule m val name
+              ar4 = combineCx2 ar3 success ( printf "Could not redefine variable %s\n" name )
+              --ar5 = addDebug ar4 $ printf "adding field?\n"
+              in (m2, ar4)
+        ) (m, ar) fields
+      in (mf, arf)
 
 semanticVerifyDeclaration (Method rt name args body) m ar =
-  let (m2, success) = addToModule m (DFunction (stringToType rt) (map (\(Argument (t,n)) -> Data n (stringToType t)) args)) name
+  let (m2, success) = addToModule m (LLIR.FunctionRef name) name
       ar2 = combineCx2 ar success ( printf "Could not redefine function %s\n" name )
       m3 = makeChild m2 (Function $ stringToType rt)
-      (m4, ar3) = foldl (\(m,ar) (Argument (t, s)) ->
-        let (m2, success) = addToModule m (stringToType t) s
+      (_,m4, ar3) = foldl (\(idx,m,ar) (Argument (t, s)) ->
+        let (m2, success) = addToModule m (LLIR.ArgRef idx name) s
             ar2 = combineCx2 ar success ( printf "Could not redefine argument %s\n" s )
-            in (m2, ar2)
-        ) (m3, ar2) args
+            in (idx+1,m2, ar2)
+        ) (0,m3, ar2) args
       ar4 = addInstruction ar3 $ LLIR.createFunction name (stringToVType rt) (map (\(Argument (t,n)) -> (stringToVType t)) args)
-      ar5 = LLIR.setInsertionPoint "entry"
-      block = semanticVerifyBlock body m4 ar4 in
+      ar5 = addInstruction ar4 $ LLIR.setInsertionPoint (name,"entry")
+      block = semanticVerifyBlock body m4 ar5 in
         block
 
 semanticVerifyBlock :: Block -> Module -> Context -> (Module, Context)
@@ -195,9 +232,9 @@ semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = case expr of
         Just exp -> semanticVerifyExpression exp m ar
         Nothing  -> (m, ar, DVoid)
-      ar3 = do
+      ar3 = unify $ do
         t <- maybeToError ar2 (functionTypeLookup m) (printf "Function didn't have return type")
-        combineCx2 ar2 (t == typ) ( printf "Return statement should return type %s, got type %s\n" (show t) (show typ) )
+        combineCxE ar2 (t == typ) ( printf "Return statement should return type %s, got type %s\n" (show t) (show typ) )
       in (m, ar3)
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
@@ -258,11 +295,13 @@ semanticVerifyExpression (LiteralExpression lit) m ar =
 semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
   case (moduleLookup m name) of
     Nothing -> (m, combineCx2 cx False $ printf "Method or %s not in scope\n" name, InvalidType)
-    Just (DFunction retType argTypes) ->
-      let res = verifyArgs args argTypes name m cx
-      in (m, res, retType)
-    Just DCallout -> (m, cx, DInt)
-    Just a -> (m, combineCx2 cx False $ printf "%s is not a callable method\n" name, InvalidType)
+    Just vref ->
+      case getType cx vref of
+        (LLIR.TFunction retType argTypes) ->
+          let res = verifyArgs args (map (\x -> Data "c" $ vTypeToType x) argTypes) name m cx
+            in (m, res, vTypeToType retType)
+        LLIR.TCallout -> (m, cx, DInt)
+        a -> (m, combineCx2 cx False $ printf "%s is not a callable method\n" name, InvalidType)
 
 semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression cCond m ar
@@ -275,7 +314,7 @@ semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
 semanticVerifyExpression (LocationExpression loc) m ar =
   case (moduleLookup m loc) of
     Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" loc, InvalidType)
-    Just a  -> (m, ar, a)
+    Just a  -> (m, ar, vTypeToType $ LLIR.getDerivedTypeN $ getType ar a)
 
 semanticVerifyExpression (LookupExpression loc expr ) m ar =
   let (m2, ar2, ty2) = semanticVerifyExpression (LocationExpression loc) m ar
@@ -325,16 +364,16 @@ returnOperatorType op
 
 verifyArgs :: [CalloutArg] -> [Data] -> String -> Module -> Context -> Context
 verifyArgs args argTypes methodName m cx =
-  if (length args) /= (length argTypes) then
-    Left [(printf "Wrong number of arguments passed: %d instead of %d for method %s\n" (length args) (length argTypes) methodName)]
-  else
-    let l = zip args argTypes in
-    foldl (\cx (arg, (Data name t)) -> case arg of
+  unify $ do
+    combineCxE cx ((length args) == (length argTypes)) $ printf "Wrong number of arguments passed: %d instead of %d for method %s\n" (length args) (length argTypes) methodName
+    let l = zip args argTypes
+    return $ foldl (\cx (arg, (Data name t)) -> case arg of
               CalloutStringLit lit -> combineCx2 cx (DString==t) $ checkArg DString t name methodName
               CalloutExpression expr ->
                 let (m2, cx2, exprType) = (semanticVerifyExpression expr m cx) in
                 combineCx2 cx2 (exprType==t) $ checkArg exprType t name methodName
               ) cx l
+
 
 checkArg passedType origType name methodName =
   printf "Wrong type of passed argument %s for method call %s: %s when %s is expected\n" name methodName (show passedType) (show origType)

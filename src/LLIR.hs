@@ -30,6 +30,12 @@ getDerivedType a =
     TPointer ty -> Just ty
     _ -> Nothing
 
+getDerivedTypeN :: VType -> VType
+getDerivedTypeN a =
+  case a of
+    TPointer ty -> ty
+    _ -> TVoid
+
 getArrayType :: VType -> Maybe VType
 getArrayType a =
   case a of
@@ -62,7 +68,7 @@ instance Value ValueRef where
   getType _ (ConstInt _) = TInt
   getType builder (GlobalRef str) =
     case HashMap.lookup str (globals $ pmod builder) of
-      Just a -> a
+      Just a -> TPointer a
       Nothing -> TVoid
 
   getType _ (ConstString _) = TString
@@ -202,14 +208,18 @@ data Context          = Context {
 
 data Builder          = Builder {
   pmod     :: PModule,
-  location :: Context
-} deriving (Eq, Show);
+  location :: Context,
+  debugs   :: [IO()]
+};
+
+addDebug :: Builder -> (IO () ) -> Builder
+addDebug b a = b{debugs=((debugs b)++[a])}
 
 getFunction :: Builder -> String -> Maybe VFunction
-getFunction (Builder pmod (Context fname _)) name = HashMap.lookup fname (functions pmod)
+getFunction (Builder pmod (Context fname _) _) name = HashMap.lookup fname (functions pmod)
 
 getInstruction :: Builder -> String -> Maybe VInstruction
-getInstruction (Builder pmod (Context fname _)) name =
+getInstruction (Builder pmod (Context fname _) _) name =
   do
     func <- HashMap.lookup fname (functions pmod)
     HashMap.lookup name (functionInstructions func)
@@ -224,54 +234,61 @@ instance Locationable VBlock where
   setInsertionPoint block builder = setInsertionPoint (Context (blockFunctionName block) (blockName block) ) builder
 
 instance Locationable Context where
-  setInsertionPoint ctx (Builder pmod _) = Builder pmod ctx
+  setInsertionPoint ctx builder = builder{location=ctx}
 
 appendToBlock :: VInstruction -> VBlock -> VBlock
 appendToBlock instr (VBlock a b instructions) = VBlock a b (instructions ++ [getName instr])
 
 appendInstruction :: VInstruction -> Builder -> Builder
-appendInstruction instr (Builder pmod context) =
-  let updated :: Maybe Builder =
+appendInstruction instr builderm =
+  let builder0 = builderm--addDebug builderm $ printf "PAdding instr %s at %s\n" (show instr) (show $ location builderm)
+      updated :: Maybe Builder =
         do
+          let builder = builder0--addDebug builder0 $ printf "Adding instruction %s\n" (show instr)
+          let context = location builder
+          let pmod1 = pmod builder
           let fn = contextFunctionName context
           let bn = contextBlockName context
-          func <- HashMap.lookup fn (functions pmod)
+          func <- HashMap.lookup fn (functions pmod1)
           block <- HashMap.lookup bn (blocks func)
           block2 <- return $ appendToBlock instr block
           func2 <- return $ func{blocks=(HashMap.insert bn block2 (blocks func)),functionInstructions=(HashMap.insert (getName instr) instr (functionInstructions func))}
-          functions2 <- return $ HashMap.insert fn func2 (functions pmod)
-          return $ Builder pmod{functions=functions2} context
+          functions2 <- return $ HashMap.insert fn func2 (functions pmod1)
+          return $ builder{pmod=pmod1{functions=functions2}}
       in case updated of
-        Just builder -> builder
-        Nothing -> Builder pmod context
+        Just builder2 -> builder2
+        Nothing -> builder0
 
 createUnaryOp :: {-Operand-} String -> ValueRef -> Builder -> (ValueRef,Builder)
-createUnaryOp op operand (Builder pmod context) =
-  let (name, pmod2) :: (String, PModule) = createID pmod
-      builder2 :: Builder = appendInstruction (VUnOp name op operand) (Builder pmod2 context)
+createUnaryOp op operand builder =
+  let (name, pmod2) :: (String, PModule) = createID $ pmod builder
+      builder2 :: Builder = appendInstruction (VUnOp name op operand) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
 createBinOp :: String -> ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
-createBinOp op operand1 operand2 (Builder pmod context) =
-  let (name, pmod2) :: (String, PModule) = createID pmod
-      builder2 :: Builder = appendInstruction (VBinOp name op operand1 operand2) (Builder pmod2 context)
+createBinOp op operand1 operand2 builder =
+  let (name, pmod2) :: (String, PModule) = createID $ pmod builder
+      builder2 :: Builder = appendInstruction (VBinOp name op operand1 operand2) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
 createGlobal :: String -> VType -> Maybe Int -> Builder -> (ValueRef, Builder)
-createGlobal name op operand1 (Builder pmod context) =
-  let pmod2 = pmod{globals=HashMap.insert name op (globals pmod)}
-      builder2 :: Builder = appendInstruction (VAllocation name op operand1) (Builder pmod2 context)
+createGlobal name op operand1 builder =
+  let pmod1 = pmod builder
+      pmod2 = pmod1{globals=HashMap.insert name op (globals pmod1)}
+      builder2 :: Builder = appendInstruction (VAllocation name op operand1) builder{pmod=pmod2}
       ref :: ValueRef = GlobalRef name in
       (ref, builder2)
 
 createAlloca :: VType -> Maybe Int -> Builder -> (ValueRef, Builder)
-createAlloca op operand1 (Builder pmod context) =
-  let (name, pmod2) :: (String, PModule) = createID pmod
-      builder2 :: Builder = appendInstruction (VAllocation name op operand1) (Builder pmod2 context)
+createAlloca op operand1 builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VAllocation name op operand1) builder{pmod=pmod2}
+      builder3 = builder2--addDebug builder2 $ printf "creating alloca inst\n"
       ref :: ValueRef = InstRef name in
-      (ref, builder2)
+      (ref, builder3)
 
 createBlockF :: String -> VFunction -> VFunction
 createBlockF str func =
@@ -280,42 +297,44 @@ createBlockF str func =
       in func {blocks = HashMap.insert str2 block $ blocks func }
 
 createBlock :: String -> Builder -> (String, Builder)
-createBlock str (Builder pmod context) =
+createBlock str builder =
   let updated :: Maybe (String,Builder) =
         do
+          let pmod1 = pmod builder
+          let context = location builder
           let fn = contextFunctionName context
-          func <- HashMap.lookup fn (functions pmod)
+          func <- HashMap.lookup fn (functions pmod1)
           let str2 = uniqueBlockName str func
           block <- return $ VBlock fn str2 []
           let oldBlocks = blocks func
           let newBlocks = HashMap.insert str2 block oldBlocks
           func2 <- return $ func{blocks=newBlocks}
-          functions2 <- return $ HashMap.insert fn func2 (functions pmod)
-          return $ (str2, Builder pmod{functions=functions2} context)
+          functions2 <- return $ HashMap.insert fn func2 (functions pmod1)
+          return $ (str2, builder{pmod=pmod1{functions=functions2}})
       in case updated of
         Just builder -> builder
-        Nothing -> ("",Builder pmod context)
+        Nothing -> ("",builder)
 
 
 -- assume no function exists with name currently
 createFunction :: String -> VType -> [VType] -> Builder -> Builder
-createFunction str ty1 argTypes (Builder pmod context) =
-  let func = VFunction str ty1 argTypes (HashMap.empty) (HashMap.empty)
+createFunction str ty1 argTypes builder =
+  let pmod1 = pmod builder
+      func = VFunction str ty1 argTypes (HashMap.empty) (HashMap.empty)
       func2 = createBlockF "entry" func
---      instrs = foldl ( \acc (idx, typ) -> HashMap.insert ("$a" ++ (show idx)) (VArgument ("$a" ++ (show idx)) idx typ ) acc) (functionInstructions func) ( zip [0..(length argTypes)] argTypes )
---      func3 = func2{functionInstructions=instrs}
-      func3 = func2
-      functions2 = HashMap.insert str func3 (functions pmod) in
-        Builder pmod{functions=functions2} context
+      functions2 = HashMap.insert str func2 (functions pmod1) in
+        builder{pmod=pmod1{functions=functions2}}
 
 createCallout :: String -> Builder -> Builder
-createCallout str (Builder pmod context) =
-  let callouts1 = callouts pmod
+createCallout str builder =
+  let pmod1 = pmod builder
+      callouts1 = callouts pmod1
       callouts2 = HashMap.insert str str callouts1
-      in (Builder pmod{callouts=callouts2} context)
+      builder2 = builder--addDebug builder $ printf "Adding callout %s\n" (show str)
+      in builder2{pmod=pmod1{callouts=callouts2}}
 
 createPModule :: PModule
 createPModule = PModule (HashMap.empty) (HashMap.empty) (HashMap.empty) 0
 
 createBuilder :: Builder
-createBuilder = Builder createPModule (Context "" "")
+createBuilder = Builder createPModule (Context "" "") []

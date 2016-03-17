@@ -128,13 +128,13 @@ semanticCheck configuration input = do
   -- Otherwise, attempt a parse.
   case (Parser.parse tokens) of
     Left  a -> Left a
-    Right ast -> do
-      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other)
-      case asts of
-        Left errors -> Right errors
-        Right llir -> Right $ [ do
+    Right ast ->
+      let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
+      if length ios /= 0
+        then Right $ ios
+        else Right $ (LLIR.debugs asts )++ [ do
             hOutput <- maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
-            hPutStrLn hOutput (show llir)
+            hPutStrLn hOutput (show $ LLIR.pmod asts)
             hClose hOutput
           ]
 printAst :: Configuration -> String -> Either String [IO ()]
