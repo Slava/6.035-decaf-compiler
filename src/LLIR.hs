@@ -49,6 +49,7 @@ data ValueRef = InstRef String
               | ConstInt Int
               | ConstString String
               | CalloutRef String
+              | GlobalRef String
               | FunctionRef String
               | ArgRef Int String
   deriving(Eq, Show);
@@ -59,6 +60,11 @@ instance Value ValueRef where
       Just inst -> getType builder inst
       Nothing -> TVoid
   getType _ (ConstInt _) = TInt
+  getType builder (GlobalRef str) =
+    case HashMap.lookup str (globals $ pmod builder) of
+      Just a -> a
+      Nothing -> TVoid
+
   getType _ (ConstString _) = TString
   getType _ (CalloutRef _) = TCallout
   getType builder (FunctionRef str) =
@@ -250,6 +256,20 @@ createBinOp :: String -> ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
 createBinOp op operand1 operand2 (Builder pmod context) =
   let (name, pmod2) :: (String, PModule) = createID pmod
       builder2 :: Builder = appendInstruction (VBinOp name op operand1 operand2) (Builder pmod2 context)
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createGlobal :: String -> VType -> Maybe Int -> Builder -> (ValueRef, Builder)
+createGlobal name op operand1 (Builder pmod context) =
+  let pmod2 = pmod{globals=HashMap.insert name op (globals pmod)}
+      builder2 :: Builder = appendInstruction (VAllocation name op operand1) (Builder pmod2 context)
+      ref :: ValueRef = GlobalRef name in
+      (ref, builder2)
+
+createAlloca :: VType -> Maybe Int -> Builder -> (ValueRef, Builder)
+createAlloca op operand1 (Builder pmod context) =
+  let (name, pmod2) :: (String, PModule) = createID pmod
+      builder2 :: Builder = appendInstruction (VAllocation name op operand1) (Builder pmod2 context)
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 

@@ -19,6 +19,17 @@ data DataType = DCallout
               | InvalidType
                 deriving (Eq, Show);
 
+
+typeToVType :: DataType -> LLIR.VType
+typeToVType DCallout        = LLIR.TCallout
+typeToVType DBool           = LLIR.TBool
+typeToVType (DArray a _ )   = LLIR.TArray $ typeToVType a
+typeToVType (DFunction a b) = LLIR.TFunction ( typeToVType a ) ( map (\(Data _ a) -> typeToVType a ) b )
+typeToVType DVoid           = LLIR.TVoid
+typeToVType DString         = LLIR.TString
+typeToVType DChar           = LLIR.TVoid
+typeToVType InvalidType     = LLIR.TVoid
+
 data ScopeType = Loop
                | Function DataType
                | Other
@@ -101,6 +112,10 @@ addInstruction :: Context -> (LLIR.Builder -> LLIR.Builder) -> Context
 addInstruction (Right b) f = Right $ f b
 addInstruction (Left a) _ = Left a
 
+addInstruction2 :: Context -> (LLIR.Builder -> (LLIR.ValueRef, LLIR.Builder) ) -> (LLIR.ValueRef,Context)
+addInstruction2 (Right b) f = let (ref,bld) = f b in (ref,Right bld)
+addInstruction2 (Left a) _  = (LLIR.ConstInt 0, Left a)
+
 maybeToError :: Context -> Maybe a -> IO () -> Either [IO()] a
 maybeToError _ (Just a) _ = Right a
 maybeToError (Left ls) Nothing io = Left (ls ++ [io])
@@ -128,9 +143,11 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
       let ar2 = case size of
              Just sz -> combineCx2 ar (sz > 0) $ printf "Array size must be greater than 0\n"
              Nothing -> ar
+          addFunc = if (scopeType m)==Other then LLIR.createGlobal name else LLIR.createAlloca
+          (val, ar3) = addInstruction2 ar2 $ addFunc (typeToVType typ) size
           (m2, success) = addToModule m (createArrayType typ size) name
-          ar3 = combineCx2 ar2 success ( printf "Could not redefine variable %s\n" name )
-          in (m2, ar3)
+          ar4 = combineCx2 ar3 success ( printf "Could not redefine variable %s\n" name )
+          in (m2, ar4)
     ) (m, ar) fields
 
 semanticVerifyDeclaration (Method rt name args body) m ar =
@@ -143,6 +160,7 @@ semanticVerifyDeclaration (Method rt name args body) m ar =
             in (m2, ar2)
         ) (m3, ar2) args
       ar4 = addInstruction ar3 $ LLIR.createFunction name (stringToVType rt) (map (\(Argument (t,n)) -> (stringToVType t)) args)
+      ar5 = LLIR.setInsertionPoint "entry"
       block = semanticVerifyBlock body m4 ar4 in
         block
 
