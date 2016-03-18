@@ -290,6 +290,51 @@ createAlloca op operand1 builder =
       ref :: ValueRef = InstRef name in
       (ref, builder3)
 
+createStore :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
+createStore toStore loc builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VStore name toStore loc) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createLookup :: ValueRef -> Builder -> (ValueRef, Builder)
+createLookup loc builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VLookup name loc) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createArrayStore :: ValueRef -> ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
+createArrayStore toStore array index builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VArrayStore name toStore array index) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createArrayLookup :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
+createArrayLookup array index builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VArrayLookup name array index) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createArrayLen :: ValueRef -> Builder -> (ValueRef, Builder)
+createArrayLen array builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VArrayLookup name array index) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+-- TODO: Implement
+-- createReturn :: Maybe ValueRef -> Builder -> (ValueRef, Builder)
+-- createCondBranch :: ValueRef -> String -> String -> (ValueRef, Builder)
+-- createUncondBranch :: String -> Builder -> (ValueRef, Builder)
+
 createBlockF :: String -> VFunction -> VFunction
 createBlockF str func =
   let str2 = uniqueBlockName str func
