@@ -326,14 +326,33 @@ createArrayLen :: ValueRef -> Builder -> (ValueRef, Builder)
 createArrayLen array builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
-      builder2 :: Builder = appendInstruction (VArrayLookup name array index) builder{pmod=pmod2}
+      builder2 :: Builder = appendInstruction (VArrayLen name array) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
--- TODO: Implement
--- createReturn :: Maybe ValueRef -> Builder -> (ValueRef, Builder)
--- createCondBranch :: ValueRef -> String -> String -> (ValueRef, Builder)
--- createUncondBranch :: String -> Builder -> (ValueRef, Builder)
+createReturn :: Maybe ValueRef -> Builder -> (ValueRef, Builder)
+createReturn retValue builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VReturn name retValue) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createCondBranch :: ValueRef -> String -> String -> Builder -> (ValueRef, Builder)
+createCondBranch cond trueBranch falseBranch builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VCondBranch name cond trueBranch falseBranch) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createUncondBranch :: String -> Builder -> (ValueRef, Builder)
+createUncondBranch branch builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VUncondBranch name branch) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
 
 createBlockF :: String -> VFunction -> VFunction
 createBlockF str func =
