@@ -22,16 +22,15 @@ getMainFooter =
 -- args: [(Name, size)]
 getPreCall :: [(String, Int)] -> String
 getPreCall args =
-  let argRegs = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d", "%eax", "%r10d", "%r11d", "%ebx", "%r14d", "%r15d", "%r12d", "%13d"] in
-
+  let argRegs = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d", "%eax", "%r10d", "%r11d", "%ebx", "%r14d", "%r15d", "%r12d", "%13d"]
+      remainingArgs = drop (length argRegs) args
+      argsInRegisters = (foldl (\acc (arg, reg) -> acc ++ "  movq " ++  (fst arg) ++ " " ++ reg ++ "\n") "" (zip args argRegs))
+      pushedArgs = (foldl (\acc arg -> acc ++ "  push " ++ (fst arg) ++ "\n") "" remainingArgs) in
   "  #precall\n" ++
   "  pusha                           # save registers\n" ++
   "  movq %rsp, %rbp                 # new stack frame\n" ++
-  (foldl (\acc (arg, reg) ->
-    acc ++ "  " ++ "  #TODO\n"
-) "" (zip args argRegs))
-  -- XXX push the remaining arguments to stack
-
+  argsInRegisters ++
+  pushedArgs ++
   "  #/precall\n"
 
 getPostCall =
@@ -43,8 +42,7 @@ getProlog :: Int -> String
 getProlog localsSize =
   "\n" ++
   "  #prolog\n" ++
-  "  " ++
-  "  " ++
+  "  enter $" ++ (show localSize) ++ " $0\n"
   "  #/prolog\n"
 
 gen cx =
