@@ -22,24 +22,15 @@ getMainFooter =
 -- args: [(Name, size)]
 getPreCall :: [(String, Int)] -> String
 getPreCall args =
+  let argRegs = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d", "%eax", "%r10d", "%r11d", "%ebx", "%r14d", "%r15d", "%r12d", "%13d"] in
+
   "  #precall\n" ++
   "  pusha                           # save registers\n" ++
   "  movq %rsp, %rbp                 # new stack frame\n" ++
-  -- XXX push arguments
-  -- 	movl	$1, %edi
-  --    movl	$2, %esi
-  --    movl	$3, %edx
-  --    movl	$4, %ecx
-  --    movl	$5, %r8d
-  --    movl	$6, %r9d
-  --    movl	$7, %eax
-  --    movl	$8, %r10d
-  --    movl	$9, %r11d
-  --    movl	$10, %ebx
-  --    movl	$11, %r14d
-  --    movl	$12, %r15d
-  --    movl	$13, %r12d
-  --    movl	$14, %r13d
+  (foldl (\acc (arg, reg) ->
+    acc ++ "  " ++ "  #TODO\n"
+) "" (zip args argRegs))
+  -- XXX push the remaining arguments to stack
 
   "  #/precall\n"
 
