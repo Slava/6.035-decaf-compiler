@@ -104,14 +104,9 @@ stringToType (Type n) = if n == "int" then DInt else if n == "boolean" then DBoo
 stringToVType :: Type -> LLIR.VType
 stringToVType (Type n) = if n == "int" then LLIR.TInt else if n == "boolean" then LLIR.TBool else LLIR.TVoid
 
-arrayInnerType :: DataType -> DataType
-arrayInnerType (DArray n _) = n
-arrayInnerType DCallout = InvalidType
-arrayInnerType DBool = InvalidType
-arrayInnerType DInt = InvalidType
-arrayInnerType (DFunction a b) = InvalidType
-arrayInnerType DVoid = InvalidType
-arrayInnerType InvalidType = InvalidType
+arrayInnerType :: LLIR.VType -> LLIR.VType
+arrayInnerType (LLIR.TArray n) = n
+arrayInnerType _ = LLIR.TVoid
 
 createArrayType :: DataType -> Maybe Int -> DataType
 createArrayType typ (Just size) = DArray typ (Just size)
@@ -145,7 +140,7 @@ addInstruction (Context ios b) f =
   let builder = b--LLIR.addDebug b $ printf "adding instruction \n"
       in (Context ios $ f builder)
 
-addInstruction2 :: Context -> (LLIR.Builder -> (LLIR.ValueRef, LLIR.Builder) ) -> (LLIR.ValueRef,Context)
+addInstruction2 :: Context -> (LLIR.Builder -> (a, LLIR.Builder) ) -> (a,Context)
 addInstruction2 (Context ios b) f =
   let (ref, b2) = f b
       builder = b2--LLIR.addDebug b2 $ printf "adding instruction2\n"
@@ -209,15 +204,18 @@ semanticVerifyBlock (Block (decls, statements)) m ar =
 
 {-(map (Right . Data.ByteString.Lazy.putStrLn . encodePretty) decls ) ++ -}
 
+evalToType :: (Module, Context, LLIR.ValueRef) -> (Module, Context, DataType)
+evalToType (m, ar, val) = (m, ar, vTypeToType $ getType ar val)
+
 semanticVerifyStatement :: Statement -> Module -> Context -> (Module, Context)
 semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
-      (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
+  let (m2, ar2, ty2) = evalToType $ semanticVerifyExpression lexpr m ar
+      (m3, ar3, ty3) = evalToType $ semanticVerifyExpression rexpr m2 ar2
       ar4 = combineCx2 ar3 (ty2==ty3) ( printf "Type of assignment incorrect -- expected %s, received %s\n" (show ty2) (show ty3) )
       in (m3, ar4)
 
 semanticVerifyStatement (MethodCallStatement methodCall) m ar =
-  let (m2, ar2, t) = semanticVerifyExpression (MethodCallExpression methodCall) m ar
+  let (m2, ar2, t) = evalToType $ semanticVerifyExpression (MethodCallExpression methodCall) m ar
   in (m2, ar2)
 
 semanticVerifyStatement (BreakStatement) m ar =
@@ -230,7 +228,7 @@ semanticVerifyStatement (ContinueStatement) m ar =
 
 semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = case expr of
-        Just exp -> semanticVerifyExpression exp m ar
+        Just exp -> evalToType $ semanticVerifyExpression exp m ar
         Nothing  -> (m, ar, DVoid)
       ar3 = unify $ do
         t <- maybeToError ar2 (functionTypeLookup m) (printf "Function didn't have return type")
@@ -238,11 +236,11 @@ semanticVerifyStatement (ReturnStatement expr) m ar =
       in (m, ar3)
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression lCond m ar
+  let (m2, ar2, ty2) = evalToType $ semanticVerifyExpression lCond m ar
       (m4, ar4) = case lInit of
         Just (id, expr)  ->
           let ar3 = combineCx2 ar2 ((moduleLookup m2 id)/=Nothing) (printf "Identifier in loop assignment not defined\n")
-              (m3, ar4, ty3) = semanticVerifyExpression expr m2 ar3
+              (m3, ar4, ty3) = evalToType $ semanticVerifyExpression expr m2 ar3
               ar5 = combineCx2 ar4 (ty3==DInt) (printf "Initializer in loop must be of type int, got type %s\n" (show ty3))
               in (m3, ar5)
         Nothing          -> (m2, ar2)
@@ -255,112 +253,152 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
       in (m, cx1)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression ifCond m ar
+  let (m2, ar2, ty2) = evalToType $ semanticVerifyExpression ifCond m ar
       m3 = makeChild m Other
       (m4, ar4) = semanticVerifyBlock ifTrue m3 ar2
       (m5, ar5) = semanticVerifyBlock ifFalse m3 ar4
       ar6 = combineCx2 ar5 (ty2==DBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
       in (m, ar6)
 
-semanticVerifyExpression :: Expression -> Module -> Context -> (Module, Context, DataType)
+semanticVerifyExpression :: Expression -> Module -> Context -> (Module, Context, LLIR.ValueRef)
 
--- TODO: CHECK CORRECT TYPES
 semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression lexpr m ar
-      (m3, ar3, ty3) = semanticVerifyExpression rexpr m2 ar2
-      expcTypes = expectedOperandTypes op
-      returnType = returnOperatorType op
-      cx1 = combineCx2 ar3 (ty2 `elem` expcTypes) $ printf "Incorrect type of left operand for op %s: %s\n" op (show ty2)
-      cx2 = combineCx2 cx1 (ty3 == ty2) $ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3) (show ty2)
-      in (m3, cx2, returnType)
+  case op of
+    "&&" ->
+      let (_, _, v2) = semanticVerifyExpression lexpr m ar
+          (_, _, v3) = semanticVerifyExpression rexpr m ar
+          ty2 = getType ar v2
+          ty3 = getType ar v3
+          cx1 = combineCx2 ar (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
+          cx2 = combineCx2 cx1 (ty3 == LLIR.TBool) $ printf "Incorrect type of right operand for op %s: %s; Expected: boolean\n" op (show ty3)
+          in semanticVerifyExpression (CondExpression lexpr rexpr (LiteralExpression $ BoolLiteral False)) m cx2
+    "||" ->
+      let (_, _, v2) = semanticVerifyExpression lexpr m ar
+          (_, _, v3) = semanticVerifyExpression rexpr m ar
+          ty2 = getType ar v2
+          ty3 = getType ar v3
+          cx1 = combineCx2 ar (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
+          cx2 = combineCx2 cx1 (ty3 == LLIR.TBool) $ printf "Incorrect type of right operand for op %s: %s; Expected: boolean\n" op (show ty3)
+          in semanticVerifyExpression (CondExpression lexpr (LiteralExpression $ BoolLiteral True) rexpr) m cx2
+    _    ->
+      let (m2, ar2, v2) = semanticVerifyExpression lexpr m ar
+          (m3, ar3, v3) = semanticVerifyExpression rexpr m2 ar2
+          ty2 = getType ar3 v2
+          ty3 = getType ar3 v3
+          expcTypes = expectedOperandTypes op
+          cx1 = combineCx2 ar3 (ty2 `elem` expcTypes) $ printf "Incorrect type of left operand for op %s: %s\n" op (show ty2)
+          cx2 = combineCx2 cx1 (ty3 == ty2) $ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3) (show ty2)
+          (val, cx3) = addInstruction2 cx2 $ LLIR.createBinOp op v2 v3
+          in (m3, cx3, val)
 
 semanticVerifyExpression (NegExpression expr) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
-      ar3 = combineCx2 ar2 (ty2 == DInt) $ printf "Type of negation expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2)
-      in (m2, ar3, DInt)
+  let (m2, ar2, v2) = semanticVerifyExpression expr m ar
+      ty2 = getType ar2 v2
+      ar3 = combineCx2 ar2 (ty2 == LLIR.TInt) $ printf "Type of negation expression incorrect -- expected %s, received %s\n" (show DInt) (show ty2)
+      (val, ar4) = addInstruction2 ar3 $ LLIR.createUnaryOp "-" v2
+      in (m2, ar4, val)
 
 semanticVerifyExpression (NotExpression expr) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
-      ar3 = combineCx2 ar2 (ty2 == DBool) $ printf "Type of not expression incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
-      in (m2, ar3, DBool)
+  let (m2, ar2, v2) = semanticVerifyExpression expr m ar
+      ty2 = getType ar2 v2
+      ar3 = combineCx2 ar2 (ty2 == LLIR.TBool) $ printf "Type of not expression incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
+      (val, ar4) = addInstruction2 ar3 $ LLIR.createUnaryOp "!" v2
+      in (m2, ar4, v2)
 
 semanticVerifyExpression (LengthExpression expr) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression expr m ar
-      ar3 = combineCx2 ar2 ((arrayInnerType ty2) /= InvalidType) $ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2)
-      in (m2, ar3, DInt)
+  let (m2, ar2, v2) = semanticVerifyExpression expr m ar
+      ty2 = getType ar2 v2
+      ar3 = combineCx2 ar2 ((arrayInnerType ty2) /= LLIR.TBool) $ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2)
+      (val, ar4) = addInstruction2 ar3 $ LLIR.createArrayLen v2
+      in (m2, ar4, val)
 
 semanticVerifyExpression (LiteralExpression lit) m ar =
-  (m, ar, litType lit)
+  (m, ar, createLit lit)
 
 semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
   case (moduleLookup m name) of
-    Nothing -> (m, combineCx2 cx False $ printf "Method or %s not in scope\n" name, InvalidType)
+    Nothing -> (m, combineCx2 cx False $ printf "Method or %s not in scope\n" name, LLIR.InstRef "")
     Just vref ->
       case getType cx vref of
         (LLIR.TFunction retType argTypes) ->
           let res = verifyArgs args (map (\x -> Data "c" $ vTypeToType x) argTypes) name m cx
-            in (m, res, vTypeToType retType)
-        LLIR.TCallout -> (m, cx, DInt)
-        a -> (m, combineCx2 cx False $ printf "%s is not a callable method\n" name, InvalidType)
+              (m2, res2, args2) = foldl (\(m, cx, l) x -> case x of
+                                      CalloutExpression x -> let (m2, cx2, val) = semanticVerifyExpression x m cx in (m2, cx2, l ++ [val])
+                                      CalloutStringLit x -> (m, cx, l ++ [LLIR.ConstString x])) (m, res, []) args
+              (val, res3) = addInstruction2 res2 $ LLIR.createMethodCall name args2
+            in (m2, res3, val)
+        LLIR.TCallout ->
+          let res = cx
+              (m2, res2, args2) = foldl (\(m, cx, l) x -> case x of
+                                      CalloutExpression x -> let (m2, cx2, val) = semanticVerifyExpression x m cx in (m2, cx2, l ++ [val])
+                                      CalloutStringLit x -> (m, cx, l ++ [LLIR.ConstString x])) (m, res, []) args
+              (val, res3) = addInstruction2 res2 $ LLIR.createCalloutCall name args2
+            in (m2, res3, val)
+        a -> (m, combineCx2 cx False $ printf "%s is not a callable method\n" name, LLIR.InstRef "")
 
 semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression cCond m ar
-      (m3, ar3, ty3) = semanticVerifyExpression cTrue m2 ar2
-      (m4, ar4, ty4) = semanticVerifyExpression cFalse m3 ar3
-      ar5 = combineCx2 ar4 (ty2 == DInt) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
-      ar6 = combineCx2 ar5 (ty3 == ty4)  $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4)
-      in (m4, ar6, ty3)
+  let (m2, ar2, v2) = semanticVerifyExpression cCond m ar
+      (_, _, tv3) = semanticVerifyExpression cTrue m2 ar2
+      (_, _, tv4) = semanticVerifyExpression cFalse m2 ar2
+      ty2 = getType ar2 v2
+      ty3 = getType ar2 tv3
+      ty4 = getType ar2 tv4
+      ar3 = combineCx2 ar2 (ty2 == LLIR.TBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
+      ar4 = combineCx2 ar3 (ty3 == ty4)  $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4)
+      (block1, ar5) = addInstruction2 ar4 $ LLIR.createBlock "condTrue"
+      (block2, ar6) = addInstruction2 ar5 $ LLIR.createBlock "condFalse"
+      (ptr, ar7) = addInstruction2 ar6 $ LLIR.createAlloca ty3 Nothing
+      (val, ar8) = addInstruction2 ar7 $ LLIR.createCondBranch v2 block1 block2
+      (blockMerge, ar9) = addInstruction2 ar8 $ LLIR.createBlock "condMerge"
+      ar10 = addInstruction ar9 $ LLIR.setInsertionPoint block1
+      (m3, ar11, v3) = semanticVerifyExpression cTrue m2 ar10
+      (_, ar12) = addInstruction2 ar11 $ LLIR.createStore v3 ptr
+      (_, ar13) = addInstruction2 ar12 $ LLIR.createUncondBranch blockMerge
+      ar14 = addInstruction ar13 $ LLIR.setInsertionPoint block2
+      (m4, ar15, v4) = semanticVerifyExpression cFalse m3 ar14
+      (_, ar16) = addInstruction2 ar15 $ LLIR.createStore v4 ptr
+      (_, ar17) = addInstruction2 ar16 $ LLIR.createUncondBranch blockMerge
+      ar18 = addInstruction ar17 $ LLIR.setInsertionPoint blockMerge
+      (val2, ar19) = addInstruction2 ar18 $ LLIR.createLookup ptr
+      in (m4, ar19, val2)
 
 semanticVerifyExpression (LocationExpression loc) m ar =
   case (moduleLookup m loc) of
-    Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" loc, InvalidType)
-    Just a  -> (m, ar, vTypeToType $ LLIR.getDerivedTypeN $ getType ar a)
+    Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" loc, LLIR.InstRef "")
+    Just a  ->
+      let (val, ar2) = addInstruction2 ar2 $ LLIR.createLookup a
+          in (m, ar2, val)
 
 semanticVerifyExpression (LookupExpression loc expr ) m ar =
-  let (m2, ar2, ty2) = semanticVerifyExpression (LocationExpression loc) m ar
-      (m3, ar3, ty3) = semanticVerifyExpression expr m ar
-      ar4 = combineCx2 ar3 ((arrayInnerType ty2) /= InvalidType) $ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2)
-      ar5 = combineCx2 ar4 (ty3 == DInt) $ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3)
-      in (m3, ar5, arrayInnerType ty2)
+  let (m2, ar2, v2) = semanticVerifyExpression (LocationExpression loc) m ar
+      (m3, ar3, v3) = semanticVerifyExpression expr m ar
+      ty2 = getType ar3 v2
+      ty3 = getType ar3 v3
+      ar4 = combineCx2 ar3 ((arrayInnerType ty2) /= LLIR.TVoid) $ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2)
+      ar5 = combineCx2 ar4 (ty3 == LLIR.TInt) $ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3)
+      (val, ar6) = addInstruction2 ar5 $ LLIR.createArrayLookup v2 v3
+      in (m3, ar6, val)
 
+createLit :: Literal -> LLIR.ValueRef
+createLit (StringLiteral s) = LLIR.ConstString s
+createLit (IntLiteral s) = LLIR.ConstInt s
+createLit (BoolLiteral s) = LLIR.ConstBool s
 
-litType :: Literal -> DataType
-litType (StringLiteral s) = DString
-litType (CharLiteral s) = DChar
-litType (IntLiteral s) = DInt
-litType (BoolLiteral s) = DBool
-
-expectedOperandTypes :: String -> [DataType]
+expectedOperandTypes :: String -> [LLIR.VType]
 expectedOperandTypes op
-  | op == "+"   =  [DInt]
-  | op == "-"   =  [DInt]
-  | op == "*"   =  [DInt]
-  | op == "/"   =  [DInt]
-  | op == "%"   =  [DInt]
-  | op == "<"   =  [DInt]
-  | op == ">"   =  [DInt]
-  | op == ">="  =  [DInt]
-  | op == "<="  =  [DInt]
-  | op == "=="  =  [DInt, DBool]
-  | op == "!="  =  [DInt, DBool]
-  | op == "&&"  =  [DBool]
-  | op == "||"  =  [DBool]
-
-returnOperatorType :: String -> DataType
-returnOperatorType op
-  | op == "+"   =  DInt
-  | op == "-"   =  DInt
-  | op == "*"   =  DInt
-  | op == "/"   =  DInt
-  | op == "%"   =  DInt
-  | op == "<"   =  DBool
-  | op == ">"   =  DBool
-  | op == ">="  =  DBool
-  | op == "<="  =  DBool
-  | op == "=="  =  DBool
-  | op == "!="  =  DBool
-  | op == "&&"  =  DBool
-  | op == "||"  =  DBool
+  | op == "+"   =  [LLIR.TInt]
+  | op == "-"   =  [LLIR.TInt]
+  | op == "*"   =  [LLIR.TInt]
+  | op == "/"   =  [LLIR.TInt]
+  | op == "%"   =  [LLIR.TInt]
+  | op == "<"   =  [LLIR.TInt]
+  | op == ">"   =  [LLIR.TInt]
+  | op == ">="  =  [LLIR.TInt]
+  | op == "<="  =  [LLIR.TInt]
+  | op == "=="  =  [LLIR.TInt, LLIR.TBool]
+  | op == "!="  =  [LLIR.TInt, LLIR.TBool]
+  | op == "&&"  =  [LLIR.TBool]
+  | op == "||"  =  [LLIR.TBool]
 
 verifyArgs :: [CalloutArg] -> [Data] -> String -> Module -> Context -> Context
 verifyArgs args argTypes methodName m cx =
@@ -370,7 +408,7 @@ verifyArgs args argTypes methodName m cx =
     return $ foldl (\cx (arg, (Data name t)) -> case arg of
               CalloutStringLit lit -> combineCx2 cx (DString==t) $ checkArg DString t name methodName
               CalloutExpression expr ->
-                let (m2, cx2, exprType) = (semanticVerifyExpression expr m cx) in
+                let (m2, cx2, exprType) = (evalToType $ semanticVerifyExpression expr m cx) in
                 combineCx2 cx2 (exprType==t) $ checkArg exprType t name methodName
               ) cx l
 

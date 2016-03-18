@@ -54,6 +54,7 @@ class Value a where
 data ValueRef = InstRef String
               | ConstInt Int
               | ConstString String
+              | ConstBool Bool
               | CalloutRef String
               | GlobalRef String
               | FunctionRef String
@@ -66,6 +67,7 @@ instance Value ValueRef where
       Just inst -> getType builder inst
       Nothing -> TVoid
   getType _ (ConstInt _) = TInt
+  getType _ (ConstBool _) = TBool
   getType builder (GlobalRef str) =
     case HashMap.lookup str (globals $ pmod builder) of
       Just a -> TPointer a
@@ -97,6 +99,7 @@ data VInstruction = VUnOp {- name -} String {- operand -} String {- argument nam
                   | VReturn String (Maybe ValueRef)
                   | VCondBranch String {-cond-} ValueRef {-true-} String {-false-} String
                   | VUncondBranch String String
+                  | VMethodCall String {- is-callout? -} Bool {- fname -} String {- args -} [ValueRef]
   deriving (Eq, Show);
 
 instance Namable VInstruction where
@@ -110,6 +113,8 @@ instance Namable VInstruction where
   getName (VReturn name _) = name
   getName (VCondBranch name _ _ _) = name
   getName (VUncondBranch name _) = name
+  getName (VMethodCall name _ _ _) = name
+
 
 instance Value VInstruction where
   getType _ (VUnOp _ op _ )
@@ -147,6 +152,11 @@ instance Value VInstruction where
   getType _ (VReturn _ _ ) = TVoid
   getType _ (VCondBranch _ _ _ _) = TVoid
   getType _ (VUncondBranch _ _) = TVoid
+  getType _ (VMethodCall _ True _ _) = TInt
+  getType b (VMethodCall _ False name _) =
+    case HashMap.lookup name $ (functions . pmod) b of
+      Nothing -> TVoid
+      Just a -> returnType a
 
 data VCallout = VCallout String
   deriving(Eq, Show);
@@ -351,6 +361,22 @@ createUncondBranch branch builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
       builder2 :: Builder = appendInstruction (VUncondBranch name branch) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createMethodCall :: String -> [ValueRef] -> Builder -> (ValueRef, Builder)
+createMethodCall fname args builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VMethodCall name False fname args) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createCalloutCall :: String -> [ValueRef] -> Builder -> (ValueRef, Builder)
+createCalloutCall fname args builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VMethodCall name True fname args) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
