@@ -209,10 +209,26 @@ evalToType (m, ar, val) = (m, ar, vTypeToType $ getType ar val)
 
 semanticVerifyStatement :: Statement -> Module -> Context -> (Module, Context)
 semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
-  let (m2, ar2, ty2) = evalToType $ semanticVerifyExpression lexpr m ar
-      (m3, ar3, ty3) = evalToType $ semanticVerifyExpression rexpr m2 ar2
-      ar4 = combineCx2 ar3 (ty2==ty3) ( printf "Type of assignment incorrect -- expected %s, received %s\n" (show ty2) (show ty3) )
-      in (m3, ar4)
+  case lexpr of
+    LocationExpression name ->
+      case (moduleLookup m name) of
+        Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" name)
+        Just a  ->
+          let (m2, ar2, val) = semanticVerifyExpression rexpr m ar
+              (val2, ar3) = addInstruction2 ar2 $ LLIR.createStore val a
+              ar4 = combineCx2 ar3 ((LLIR.getDerivedTypeN $ getType ar3 a)==(getType ar3 val)) $ printf "Type of assignment into array incorrect\n"
+              in (m2, ar4)
+    LookupExpression name expr ->
+      case (moduleLookup m name) of
+        Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" name)
+        Just a  ->
+          let (m2, ar2, val) = semanticVerifyExpression rexpr m ar
+              (m3, ar3, idx) = semanticVerifyExpression rexpr m2 ar2
+              (val2, ar4) = addInstruction2 ar3 $ LLIR.createArrayStore val a idx
+              ar5 = combineCx2 ar4 ((arrayInnerType $ getType ar4 a)==( getType ar4 val)) $ printf "Type of assignment into array incorrect\n"
+              ar6 = combineCx2 ar5 ((getType ar4 idx)==LLIR.TInt) $ printf "Type of assignment into array incorrect\n"
+              in (m3, ar6)
+    _ -> (m, combineCx2 ar False $ printf "Cannot assign to non variable / non array\n")
 
 semanticVerifyStatement (MethodCallStatement methodCall) m ar =
   let (m2, ar2, t) = evalToType $ semanticVerifyExpression (MethodCallExpression methodCall) m ar
@@ -366,7 +382,7 @@ semanticVerifyExpression (LocationExpression loc) m ar =
   case (moduleLookup m loc) of
     Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" loc, LLIR.InstRef "")
     Just a  ->
-      let (val, ar2) = addInstruction2 ar2 $ LLIR.createLookup a
+      let (val, ar2) = addInstruction2 ar $ LLIR.createLookup a
           in (m, ar2, val)
 
 semanticVerifyExpression (LookupExpression loc expr ) m ar =
