@@ -154,7 +154,7 @@ codeGen configuration input = do
       case asts of
         Left errors -> Right errors
         Right a -> do
-          let asm = CodeGen.gen asts
+          let asm = CodeGen.gen asts mod
           let maybePath = Configuration.outputFileName configuration
           case maybePath of
             Just path -> Right [writeFile path asm]
