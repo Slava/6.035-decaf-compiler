@@ -269,31 +269,40 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
       in (m, cx1)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
-  let (m2, ar2, ty2) = evalToType $ semanticVerifyExpression ifCond m ar
-      m3 = makeChild m Other
-      (m4, ar4) = semanticVerifyBlock ifTrue m3 ar2
-      (m5, ar5) = semanticVerifyBlock ifFalse m3 ar4
-      ar6 = combineCx2 ar5 (ty2==DBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
-      in (m, ar6)
+  let (m2, ar2, v2) = semanticVerifyExpression ifCond m ar
+      ty2 = getType ar2 v2
+      ar3 = combineCx2 ar2 (ty2 == LLIR.TBool) $ printf "Type of conditional in if statement -- expected %s, received %s\n" (show LLIR.TBool) (show ty2)
+      (block1, ar4) = addInstruction2 ar3 $ LLIR.createBlock "ifTrue"
+      (block2, ar5) = addInstruction2 ar4 $ LLIR.createBlock "ifFalse"
+      (val, ar6) = addInstruction2 ar5 $ LLIR.createCondBranch v2 block1 block2
+      (blockMerge, ar7) = addInstruction2 ar6 $ LLIR.createBlock "ifMerge"
+      ar8 = addInstruction ar7 $ LLIR.setInsertionPoint block1
+      (_, ar9) = semanticVerifyBlock ifTrue m2 ar8
+      (_, ar10) = addInstruction2 ar9 $ LLIR.createUncondBranch blockMerge
+      ar11 = addInstruction ar10 $ LLIR.setInsertionPoint block2
+      (_, ar12) = semanticVerifyBlock ifFalse m2 ar11
+      (_, ar13) = addInstruction2 ar12 $ LLIR.createUncondBranch blockMerge
+      ar14 = addInstruction ar13 $ LLIR.setInsertionPoint blockMerge
+      in (m, ar14)
 
 semanticVerifyExpression :: Expression -> Module -> Context -> (Module, Context, LLIR.ValueRef)
 
 semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
   case op of
     "&&" ->
-      let (_, _, v2) = semanticVerifyExpression lexpr m ar
-          (_, _, v3) = semanticVerifyExpression rexpr m ar
-          ty2 = getType ar v2
-          ty3 = getType ar v3
-          cx1 = combineCx2 ar (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
+      let (_, ar2, v2) = semanticVerifyExpression lexpr m ar
+          (_, ar3, v3) = semanticVerifyExpression rexpr m ar2
+          ty2 = getType ar3 v2
+          ty3 = getType ar3 v3
+          cx1 = combineCx2 ar3 (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
           cx2 = combineCx2 cx1 (ty3 == LLIR.TBool) $ printf "Incorrect type of right operand for op %s: %s; Expected: boolean\n" op (show ty3)
           in semanticVerifyExpression (CondExpression lexpr rexpr (LiteralExpression $ BoolLiteral False)) m cx2
     "||" ->
-      let (_, _, v2) = semanticVerifyExpression lexpr m ar
-          (_, _, v3) = semanticVerifyExpression rexpr m ar
-          ty2 = getType ar v2
-          ty3 = getType ar v3
-          cx1 = combineCx2 ar (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
+      let (_, ar2, v2) = semanticVerifyExpression lexpr m ar
+          (_, ar3, v3) = semanticVerifyExpression rexpr m ar2
+          ty2 = getType ar3 v2
+          ty3 = getType ar3 v3
+          cx1 = combineCx2 ar3 (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
           cx2 = combineCx2 cx1 (ty3 == LLIR.TBool) $ printf "Incorrect type of right operand for op %s: %s; Expected: boolean\n" op (show ty3)
           in semanticVerifyExpression (CondExpression lexpr (LiteralExpression $ BoolLiteral True) rexpr) m cx2
     _    ->
@@ -354,29 +363,29 @@ semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
 
 semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
   let (m2, ar2, v2) = semanticVerifyExpression cCond m ar
-      (_, _, tv3) = semanticVerifyExpression cTrue m2 ar2
-      (_, _, tv4) = semanticVerifyExpression cFalse m2 ar2
-      ty2 = getType ar2 v2
-      ty3 = getType ar2 tv3
-      ty4 = getType ar2 tv4
-      ar3 = combineCx2 ar2 (ty2 == LLIR.TBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
-      ar4 = combineCx2 ar3 (ty3 == ty4)  $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4)
-      (block1, ar5) = addInstruction2 ar4 $ LLIR.createBlock "condTrue"
-      (block2, ar6) = addInstruction2 ar5 $ LLIR.createBlock "condFalse"
-      (ptr, ar7) = addInstruction2 ar6 $ LLIR.createAlloca ty3 Nothing
-      (val, ar8) = addInstruction2 ar7 $ LLIR.createCondBranch v2 block1 block2
-      (blockMerge, ar9) = addInstruction2 ar8 $ LLIR.createBlock "condMerge"
-      ar10 = addInstruction ar9 $ LLIR.setInsertionPoint block1
-      (m3, ar11, v3) = semanticVerifyExpression cTrue m2 ar10
-      (_, ar12) = addInstruction2 ar11 $ LLIR.createStore v3 ptr
-      (_, ar13) = addInstruction2 ar12 $ LLIR.createUncondBranch blockMerge
-      ar14 = addInstruction ar13 $ LLIR.setInsertionPoint block2
-      (m4, ar15, v4) = semanticVerifyExpression cFalse m3 ar14
-      (_, ar16) = addInstruction2 ar15 $ LLIR.createStore v4 ptr
-      (_, ar17) = addInstruction2 ar16 $ LLIR.createUncondBranch blockMerge
-      ar18 = addInstruction ar17 $ LLIR.setInsertionPoint blockMerge
-      (val2, ar19) = addInstruction2 ar18 $ LLIR.createLookup ptr
-      in (m4, ar19, val2)
+      (_, ar3, tv3) = semanticVerifyExpression cTrue m2 ar2
+      (_, ar4, tv4) = semanticVerifyExpression cFalse m2 ar3
+      ty2 = getType ar4 v2
+      ty3 = getType ar4 tv3
+      ty4 = getType ar4 tv4
+      ar5 = combineCx2 ar4 (ty2 == LLIR.TBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
+      ar6 = combineCx2 ar5 (ty3 == ty4)  $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4)
+      (block1, ar7) = addInstruction2 ar6 $ LLIR.createBlock "condTrue"
+      (block2, ar8) = addInstruction2 ar7 $ LLIR.createBlock "condFalse"
+      (ptr, ar9) = addInstruction2 ar8 $ LLIR.createAlloca ty3 Nothing
+      (val, ar10) = addInstruction2 ar9 $ LLIR.createCondBranch v2 block1 block2
+      (blockMerge, ar11) = addInstruction2 ar10 $ LLIR.createBlock "condMerge"
+      ar12 = addInstruction ar11 $ LLIR.setInsertionPoint block1
+      (m3, ar13, v3) = semanticVerifyExpression cTrue m2 ar12
+      (_, ar14) = addInstruction2 ar13 $ LLIR.createStore v3 ptr
+      (_, ar15) = addInstruction2 ar14 $ LLIR.createUncondBranch blockMerge
+      ar16 = addInstruction ar15 $ LLIR.setInsertionPoint block2
+      (m4, ar17, v4) = semanticVerifyExpression cFalse m3 ar16
+      (_, ar18) = addInstruction2 ar17 $ LLIR.createStore v4 ptr
+      (_, ar19) = addInstruction2 ar18 $ LLIR.createUncondBranch blockMerge
+      ar20 = addInstruction ar19 $ LLIR.setInsertionPoint blockMerge
+      (val2, ar21) = addInstruction2 ar20 $ LLIR.createLookup ptr
+      in (m4, ar21, val2)
 
 semanticVerifyExpression (LocationExpression loc) m ar =
   case (moduleLookup m loc) of

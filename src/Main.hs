@@ -131,8 +131,8 @@ semanticCheck configuration input = do
     Right ast ->
       let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
       if length ios /= 0
-        then Right $ ios
-        else Right $ (LLIR.debugs asts )++ [ do
+        then Right $ (LLIR.debugs asts) ++ ios
+        else Right $ (LLIR.debugs asts) ++ [ do
             hOutput <- maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
             hPutStrLn hOutput (show $ LLIR.pmod asts)
             hClose hOutput
