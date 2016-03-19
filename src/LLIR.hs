@@ -174,7 +174,19 @@ data VFunction    = VFunction {
   arguments         :: [VType],
   functionInstructions :: HashMap.Map String VInstruction,
   blocks    :: HashMap.Map String VBlock
-} deriving (Eq, Show);
+} deriving (Eq);
+
+blockToString :: (HashMap.Map String VInstruction) -> VBlock -> String
+blockToString hm (VBlock _ name instr) =
+  " " ++ name ++ ":\n" ++ (foldl (\acc x -> acc ++ "    " ++ (
+        case HashMap.lookup x hm of
+          Just a -> x ++ " = " ++ (show a) ++ "\n"
+          Nothing -> "INVALID_INST("++name++")\n"
+        )) "" instr)
+
+instance Show VFunction where
+  show (VFunction functionName returnType arguments functionInstructions blocks) =
+    "def " ++ (show returnType) ++ " "++ functionName ++ (show arguments) ++ "\n" ++ ( foldl (\acc x -> acc ++ (blockToString functionInstructions x)) "" (HashMap.elems blocks) ) ++ "\n"
 
 instance Value VFunction where
   getType _ (VFunction _ returnType arguments _ _ ) = TFunction returnType arguments
@@ -196,7 +208,14 @@ data PModule          = PModule {
   callouts     :: HashMap.Map String String,
   globals      :: HashMap.Map String VType,
   lastId       :: Int
-} deriving (Eq, Show);
+} deriving (Eq);
+
+instance Show PModule where
+  show (PModule functions callouts globals _) =
+    let cstring   = foldl (\acc (str,_) -> acc ++ "callout " ++ (show str) ++"\n") "" ( HashMap.assocs callouts )
+        gstring   = foldl (\acc (str,typ) -> acc ++ "global " ++ (show typ) ++" "++ (show str) ++ "\n") "" ( HashMap.assocs globals )
+        fstring   = foldl (\acc (str,func) -> acc ++ (show func) ++ "\n") "" (HashMap.assocs functions)
+        in cstring ++ "\n" ++ gstring ++ "\n" ++ fstring
 
 uniqueBlockName :: String -> VFunction -> String
 uniqueBlockName str func =

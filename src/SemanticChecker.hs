@@ -341,7 +341,7 @@ semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
           ty2 = getType ar3 v2
           ty3 = getType ar3 v3
           expcTypes = expectedOperandTypes op
-          cx1 = combineCx2 ar3 (ty2 `elem` expcTypes) $ printf "Incorrect type of left operand for op %s: %s\n" op (show ty2)
+          cx1 = combineCx2 ar3 (ty2 `elem` expcTypes) $ printf "Incorrect type of left operand for op %s: %s \n%s\n%s\n%s\n" op (show ty2) (show v2) (show lexpr) (show $ LLIR.pmod $ contextBuilder ar3)
           cx2 = combineCx2 cx1 (ty3 == ty2) $ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3) (show ty2)
           (val, cx3) = addInstruction2 cx2 $ LLIR.createBinOp op v2 v3
           in (m3, cx3, val)
