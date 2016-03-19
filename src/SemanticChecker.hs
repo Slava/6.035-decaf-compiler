@@ -124,6 +124,10 @@ data Context = Context {
 getType :: Context -> (LLIR.ValueRef) -> LLIR.VType
 getType (Context errs builder) vref = LLIR.getType builder vref
 
+getMaybeType :: Context -> (Maybe LLIR.ValueRef) -> LLIR.VType
+getMaybeType (Context errs builder) (Just vref) = LLIR.getType builder vref
+getMaybeType (Context errs builder) Nothing = LLIR.TVoid
+
 combineCx2 :: Context -> Bool -> IO () -> Context
 combineCx2 cx True _ = cx
 combineCx2 (Context ios bld) False io = Context (ios ++ [io]) bld
@@ -253,13 +257,15 @@ semanticVerifyStatement (ContinueStatement) m ar =
         in (m, ar2)
 
 semanticVerifyStatement (ReturnStatement expr) m ar =
-  let (m2, ar2, typ) = case expr of
-        Just exp -> evalToType $ semanticVerifyExpression exp m ar
-        Nothing  -> (m, ar, DVoid)
+  let (m2, ar2, val) = case expr of
+        Just exp -> let (a, b, c) = semanticVerifyExpression exp m ar in (a, b, Just c)
+        Nothing  -> (m, ar, Nothing)
+      typ = vTypeToType $ getMaybeType ar2 val
       ar3 = unify $ do
         t <- maybeToError ar2 (functionTypeLookup m) (printf "Function didn't have return type")
         combineCxE ar2 (t == typ) ( printf "Return statement should return type %s, got type %s\n" (show t) (show typ) )
-      in (m, ar3)
+      (_, ar4) = addInstruction2 ar3 $ LLIR.createReturn val
+      in (m, ar4)
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
   let (m2, ar2) = case lInit of
