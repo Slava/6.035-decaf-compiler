@@ -108,6 +108,7 @@ instance Namable VInstruction where
   getName (VStore name _ _) = name
   getName (VLookup name _) = name
   getName (VAllocation name _ _) = name
+  getName (VArrayStore name _ _ _) = name
   getName (VArrayLookup name _ _) = name
   getName (VArrayLen name _) = name
   getName (VReturn name _) = name
@@ -233,6 +234,14 @@ getInstruction (Builder pmod (Context fname _) _) name =
   do
     func <- HashMap.lookup fname (functions pmod)
     HashMap.lookup name (functionInstructions func)
+
+getTerminator :: Builder -> Maybe String
+getTerminator builder =
+  do
+    func <- getFunction builder (contextFunctionName $ location builder)
+    block <- HashMap.lookup (contextBlockName $ location builder) $ blocks func
+    let lst = blockInstructions block
+    if ( length lst )== 0 then Nothing else Just $ last lst
 
 instance Locationable (String,String) where
   setInsertionPoint (str1,str2) builder = setInsertionPoint (Context str1 str2 ) builder

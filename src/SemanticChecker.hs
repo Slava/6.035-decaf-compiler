@@ -1,4 +1,8 @@
 {-# OPTIONS -Wall #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module SemanticChecker where
 
@@ -51,7 +55,7 @@ vTypeToType (LLIR.TArray a )   = DArray (vTypeToType a) Nothing
 vTypeToType (LLIR.TFunction a b) = DFunction ( vTypeToType a ) ( map (\a -> Data "str" $ vTypeToType a ) b )
 vTypeToType (LLIR.TPointer _)       = InvalidType
 
-data ScopeType = Loop
+data ScopeType = Loop {- loopEnd -} String {- loopInc -} String
                | Function DataType
                | Other
                  deriving (Eq, Show);
@@ -82,7 +86,7 @@ moduleLookup (Module parent m _) s =
 scopeLookup :: Module -> Maybe ScopeType
 scopeLookup (Module parent _ scopeType) =
   case scopeType of
-    Loop -> Just Loop
+    Loop a b -> Just $ Loop a b
     _    -> case parent of
       Just a  -> scopeLookup a
       Nothing -> Nothing
@@ -235,12 +239,18 @@ semanticVerifyStatement (MethodCallStatement methodCall) m ar =
   in (m2, ar2)
 
 semanticVerifyStatement (BreakStatement) m ar =
-  let ar2 = combineCx2 ar (scopeLookup m == Just Loop) (printf "Break statements must occur in loop\n")
-  in (m, ar2)
+  case scopeLookup m of
+      Nothing -> (m, combineCx2 ar False $ printf "Break statements must occur in loop\n")
+      Just (Loop endLoop incLoop) ->
+        let (_,ar2) = addInstruction2 ar $ LLIR.createUncondBranch endLoop
+        in (m, ar2)
 
 semanticVerifyStatement (ContinueStatement) m ar =
-  let ar2 = combineCx2 ar (scopeLookup m == Just Loop) (printf "Continue statements must occur in loop\n")
-  in (m, ar2)
+  case scopeLookup m of
+      Nothing -> (m, combineCx2 ar False $ printf "Continue statements must occur in loop\n")
+      Just (Loop endLoop incLoop) ->
+        let (_,ar2) = addInstruction2 ar $ LLIR.createUncondBranch incLoop
+        in (m, ar2)
 
 semanticVerifyStatement (ReturnStatement expr) m ar =
   let (m2, ar2, typ) = case expr of
@@ -252,21 +262,41 @@ semanticVerifyStatement (ReturnStatement expr) m ar =
       in (m, ar3)
 
 semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
-  let (m2, ar2, ty2) = evalToType $ semanticVerifyExpression lCond m ar
-      (m4, ar4) = case lInit of
-        Just (id, expr)  ->
-          let ar3 = combineCx2 ar2 ((moduleLookup m2 id)/=Nothing) (printf "Identifier in loop assignment not defined\n")
-              (m3, ar4, ty3) = evalToType $ semanticVerifyExpression expr m2 ar3
-              ar5 = combineCx2 ar4 (ty3==DInt) (printf "Initializer in loop must be of type int, got type %s\n" (show ty3))
-              in (m3, ar5)
-        Nothing          -> (m2, ar2)
-      (m5, ar5) = case lIncr of
-        Just inc  -> (m4, combineCx2 ar4 (inc > 0) (printf "Increment in for loop must be positive integer\n") )
-        Nothing   -> (m4, ar4)
-      m6 = makeChild m4 Loop
-      (m7, ar7) = semanticVerifyBlock lBody m6 ar5
-      cx1 = combineCx2 ar7 (ty2 == DBool) $ printf "Loop condition expected expression of type bool but got %s\n" (show ty2)
-      in (m, cx1)
+  let (m2, ar2) = case lInit of
+          Just (id, expr) ->
+            let ar3 = combineCx2 ar ((moduleLookup m id)/=Nothing) (printf "Identifier in loop assignment not defined\n")
+                (m3, ar4, val) = semanticVerifyExpression expr m ar3
+                ty3 = getType ar4 val
+                ar5 = combineCx2 ar4 (ty3==LLIR.TInt) (printf "Initializer in loop must be of type int, got type %s\n" (show ty3))
+                in semanticVerifyStatement (Assignment ((LocationExpression id), expr)) m3 ar5
+          Nothing -> (m, ar)
+      (m3, ar3, cond) = semanticVerifyExpression lCond m2 ar2
+      (loopStart, ar4) = addInstruction2 ar3 $ LLIR.createBlock "startLoop"
+      (loopEnd, ar5) = addInstruction2 ar4 $ LLIR.createBlock "endLoop"
+      (loopInc, ar6) = addInstruction2 ar5 $ LLIR.createBlock "incLoop"
+      (_, ar7) = addInstruction2 ar6 $ LLIR.createCondBranch cond loopStart loopEnd
+      ar8 = addInstruction ar7 $ LLIR.setInsertionPoint loopStart
+      m4 = makeChild m3 $ Loop loopEnd loopInc
+      (_, ar9) = semanticVerifyBlock lBody m4 ar8
+      ar10 = if (LLIR.getTerminator $ contextBuilder ar9) == Nothing
+        then snd $ addInstruction2 ar9 $ LLIR.createUncondBranch loopInc
+        else ar9
+      ar11 = case lInit of
+        Nothing -> ar10
+        Just (name,_) ->
+          let amount :: Int = case lIncr of
+                                Just a -> a
+                                Nothing -> 1
+              loc = LocationExpression name
+              (_, ar12) = semanticVerifyStatement (Assignment (loc, (BinOpExpression ("+", loc, (LiteralExpression $ IntLiteral amount))))) m3 ar8
+              ar13 = combineCx2 ar12 (amount > 0) $ printf "Increment in for loop must be positive integer\n"
+              in ar13
+      (_, ar12, cond2) = semanticVerifyExpression lCond m2 ar11
+      (_, ar13) = addInstruction2 ar10 $ LLIR.createCondBranch cond2 loopStart loopEnd
+      ar14 = addInstruction ar13 $ LLIR.setInsertionPoint loopEnd
+      ty2 = getType ar14 cond
+      ar15 = combineCx2 ar13 (ty2 == LLIR.TBool) $ printf "Loop condition expected expression of type bool but got %s\n" (show ty2)
+      in (m, ar15)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
   let (m2, ar2, v2) = semanticVerifyExpression ifCond m ar
