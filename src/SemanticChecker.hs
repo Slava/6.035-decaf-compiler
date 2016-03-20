@@ -293,20 +293,22 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
         then snd $ addInstruction2 ar9 $ LLIR.createUncondBranch loopInc
         else ar9
       ar11 = case lInit of
-        Nothing -> ar10
+        Nothing -> addInstruction ar10 $ LLIR.setInsertionPoint loopInc
         Just (name,_) ->
           let amount :: Int = case lIncr of
                                 Just a -> a
                                 Nothing -> 1
               loc = LocationExpression name
-              (_, ar12) = semanticVerifyStatement (Assignment (loc, (BinOpExpression ("+", loc, (LiteralExpression $ IntLiteral amount))))) m3 ar8
-              ar13 = combineCx2 ar12 (amount > 0) $ printf "Increment in for loop must be positive integer\n"
-              in ar13
+              ar12 = addInstruction ar10 $ LLIR.setInsertionPoint loopInc
+              ar13 = snd $ semanticVerifyStatement (Assignment (loc, (BinOpExpression ("+", loc, (LiteralExpression $ IntLiteral amount))))) m3 ar12
+              ar14 = combineCx2 ar13 (amount > 0) $ printf "Increment in for loop must be positive integer\n"
+              ar15 = addDebug ar14 $ printf "current context after inc:%s\n" (show $ LLIR.location $ contextBuilder $ ar14)
+              in ar15
       (_, ar12, cond2) = semanticVerifyExpression lCond m2 ar11
-      (_, ar13) = addInstruction2 ar10 $ LLIR.createCondBranch cond2 loopStart loopEnd
+      (_, ar13) = addInstruction2 ar12 $ LLIR.createCondBranch cond2 loopStart loopEnd
       ar14 = addInstruction ar13 $ LLIR.setInsertionPoint loopEnd
       ty2 = getType ar14 cond
-      ar15 = combineCx2 ar13 (ty2 == LLIR.TBool) $ printf "Loop condition expected expression of type bool but got %s\n" (show ty2)
+      ar15 = combineCx2 ar14 (ty2 == LLIR.TBool) $ printf "Loop condition expected expression of type bool but got %s\n" (show ty2)
       in (m, ar15)
 
 semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =

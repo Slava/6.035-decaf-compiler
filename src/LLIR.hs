@@ -183,7 +183,8 @@ data VFunction    = VFunction {
   returnType        :: VType,
   arguments         :: [VType],
   functionInstructions :: HashMap.Map String VInstruction,
-  blocks    :: HashMap.Map String VBlock
+  blocks    :: HashMap.Map String VBlock,
+  blockOrder :: [String]
 } deriving (Eq);
 
 blockToString :: (HashMap.Map String VInstruction) -> VBlock -> String
@@ -194,12 +195,21 @@ blockToString hm (VBlock _ name instr) =
           Nothing -> "INVALID_INST("++name++")\n"
         )) "" instr)
 
+getValues :: HashMap.Map String VBlock -> [String] -> [VBlock]
+getValues hm [] = []
+getValues hm (idx:keys) =
+  let lk :: Maybe VBlock = HashMap.lookup idx hm
+      val :: [VBlock] = case lk of
+        Nothing -> []
+        Just a -> [a]
+      in val ++ ( getValues hm keys )
+
 instance Show VFunction where
-  show (VFunction functionName returnType arguments functionInstructions blocks) =
-    "def " ++ (show returnType) ++ " "++ functionName ++ (show arguments) ++ "\n" ++ ( foldl (\acc x -> acc ++ (blockToString functionInstructions x)) "" (HashMap.elems blocks) ) ++ "\n"
+  show (VFunction functionName returnType arguments functionInstructions blocks blockOrder) =
+    "def " ++ (show returnType) ++ " "++ functionName ++ (show arguments) ++ "\n" ++ ( foldl (\acc x -> acc ++ (blockToString functionInstructions x)) "" (getValues blocks blockOrder) ) ++ "\n"
 
 instance Value VFunction where
-  getType _ (VFunction _ returnType arguments _ _ ) = TFunction returnType arguments
+  getType _ (VFunction _ returnType arguments _ _ _ ) = TFunction returnType arguments
 
 instance Namable VFunction where
   getName func = (functionName func)
@@ -428,7 +438,7 @@ createBlockF :: String -> VFunction -> VFunction
 createBlockF str func =
   let str2 = uniqueBlockName str func
       block = VBlock (functionName func) str2 []
-      in func {blocks = HashMap.insert str2 block $ blocks func }
+      in func {blocks = HashMap.insert str2 block $ blocks func, blockOrder=(blockOrder func)++[str2]}
 
 createBlock :: String -> Builder -> (String, Builder)
 createBlock str builder =
@@ -442,7 +452,7 @@ createBlock str builder =
           block <- return $ VBlock fn str2 []
           let oldBlocks = blocks func
           let newBlocks = HashMap.insert str2 block oldBlocks
-          func2 <- return $ func{blocks=newBlocks}
+          func2 <- return $ func{blocks=newBlocks, blockOrder=(blockOrder func)++[str2]}
           functions2 <- return $ HashMap.insert fn func2 (functions pmod1)
           return $ (str2, builder{pmod=pmod1{functions=functions2}})
       in case updated of
@@ -454,7 +464,7 @@ createBlock str builder =
 createFunction :: String -> VType -> [VType] -> Builder -> Builder
 createFunction str ty1 argTypes builder =
   let pmod1 = pmod builder
-      func = VFunction str ty1 argTypes (HashMap.empty) (HashMap.empty)
+      func = VFunction str ty1 argTypes (HashMap.empty) (HashMap.empty) []
       func2 = createBlockF "entry" func
       functions2 = HashMap.insert str func2 (functions pmod1) in
         builder{pmod=pmod1{functions=functions2}}
