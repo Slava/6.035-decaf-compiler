@@ -61,6 +61,16 @@ data ValueRef = InstRef String
               | ArgRef Int String
   deriving(Eq, Show);
 
+getReferenceName :: ValueRef -> String
+getReferenceName (InstRef a) = a
+getReferenceName (ConstInt _) = "!cint"
+getReferenceName (ConstString _) = "!cstring"
+getReferenceName (ConstBool _) = "!cbool"
+getReferenceName (CalloutRef a) = a
+getReferenceName (GlobalRef a) = a
+getReferenceName (FunctionRef a) = a
+getReferenceName (ArgRef _ _) = "!argref"
+
 instance Value ValueRef where
   getType builder (InstRef str) =
     case getInstruction builder str of
@@ -246,7 +256,7 @@ addDebug :: Builder -> (IO () ) -> Builder
 addDebug b a = b{debugs=((debugs b)++[a])}
 
 getFunction :: Builder -> String -> Maybe VFunction
-getFunction (Builder pmod (Context fname _) _) name = HashMap.lookup fname (functions pmod)
+getFunction (Builder pmod _ _) name = HashMap.lookup name (functions pmod)
 
 getInstruction :: Builder -> String -> Maybe VInstruction
 getInstruction (Builder pmod (Context fname _) _) name =
