@@ -47,7 +47,6 @@ getPostCall =
 
 getProlog :: Int -> String
 getProlog localsSize =
-  "\n" ++
   "  #prolog\n" ++
   "  pusha\n" ++
   "  enter $" ++ (show localsSize) ++ " $0\n" ++
@@ -55,7 +54,7 @@ getProlog localsSize =
 
 getEpilog :: String
 getEpilog =
-  "\n" ++
+  " \n" ++
   "  #epilog\n" ++
   "  leave\n" ++
   "  popa\n" ++
@@ -63,13 +62,13 @@ getEpilog =
 
 genGlobals :: HashMap.Map String (VType, Maybe Int) -> String
 genGlobals globals =
-    "  .bss\n" ++ (intercalate "" $ map genGlobal $ HashMap.toList globals)
+    ".bss\n" ++ (intercalate "" $ map genGlobal $ HashMap.toList globals) ++ "\n"
 
 genGlobal :: (String, (VType, Maybe Int)) -> String
 genGlobal (name, (_, Nothing)) =
-    "  .global_" ++ name ++ ":\n    .zero 8\n" -- Need to adjust for arrays
+    ".global_" ++ name ++ ":\n  .zero 8\n" -- Need to adjust for arrays
 genGlobal (name, (_, Just size)) =
-    "  .global_" ++ name ++ ":\n    .zero " ++ show (8 * size) ++ "\n"
+    ".global_" ++ name ++ ":\n  .zero " ++ show (8 * size) ++ "\n"
 
 genCallouts :: HashMap.Map String String -> String
 genCallouts callouts =
@@ -77,6 +76,7 @@ genCallouts callouts =
 
 genFunction :: LLIR.VFunction -> String
 genFunction f =
+  "_" ++ LLIR.functionName f ++ ":\n" ++
   getProlog (8 * (length $ (LLIR.functionInstructions f))) ++
   (snd $ foldl (\(table, s) name ->
     let block = HashMap.lookup name $ LLIR.blocks f
