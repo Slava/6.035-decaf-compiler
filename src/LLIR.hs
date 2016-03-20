@@ -52,7 +52,7 @@ class Value a where
   getType :: Builder -> a -> VType
 
 data ValueRef = InstRef String
-              | ConstInt Int
+              | ConstInt Integer
               | ConstString String
               | ConstBool Bool
               | CalloutRef String

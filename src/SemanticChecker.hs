@@ -307,7 +307,7 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
                                 Nothing -> 1
               loc = LocationExpression name
               ar12 = addInstruction ar10 $ LLIR.setInsertionPoint loopInc
-              ar13 = snd $ semanticVerifyStatement (Assignment (loc, (BinOpExpression ("+", loc, (LiteralExpression $ IntLiteral amount))))) m3 ar12
+              ar13 = snd $ semanticVerifyStatement (Assignment (loc, (BinOpExpression ("+", loc, (LiteralExpression $ IntLiteral $ show amount))))) m3 ar12
               ar14 = combineCx2 ar13 (amount > 0) $ printf "Increment in for loop must be positive integer\n"
               in ar14
       (_, ar12, cond2) = semanticVerifyExpression lCond m2 ar11
@@ -394,7 +394,10 @@ semanticVerifyExpression (LengthExpression expr) m ar =
       in (m2, ar4, val)
 
 semanticVerifyExpression (LiteralExpression lit) m ar =
-  (m, ar, createLit lit)
+  let val = createLit lit in
+    case val of
+      Just v -> (m, ar, v)
+      Nothing -> (m, combineCx2 ar False $ printf "Integer out of bounds %s\n" (show lit), LLIR.ConstInt 0)
 
 semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
   case (moduleLookup m name) of
@@ -462,11 +465,18 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
       (val, ar6) = addInstruction2 ar5 $ LLIR.createArrayLookup v2 v3
       in (m3, ar6, val)
 
-createLit :: Literal -> LLIR.ValueRef
-createLit (StringLiteral s) = LLIR.ConstString s
-createLit (IntLiteral s) = LLIR.ConstInt s
-createLit (CharLiteral s) = LLIR.ConstInt $ ord s
-createLit (BoolLiteral s) = LLIR.ConstBool s
+createLit :: Literal -> Maybe LLIR.ValueRef
+createLit (StringLiteral s) = Just $ LLIR.ConstString s
+-- to do the bounds checking
+createLit (IntLiteral s) =
+  let nint :: Integer = read s
+      minB :: Integer = read "-9223372036854775808"
+      maxB :: Integer = read "9223372036854775807"
+      ge :: Bool = nint >= minB
+      le :: Bool = nint <= maxB
+      in if (&&) ge le then Just $ LLIR.ConstInt nint else Nothing
+createLit (CharLiteral s) = Just $ LLIR.ConstInt $ read $ show $ ord s
+createLit (BoolLiteral s) = Just $ LLIR.ConstBool s
 
 expectedOperandTypes :: String -> [LLIR.VType]
 expectedOperandTypes op

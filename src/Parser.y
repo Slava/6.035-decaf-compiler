@@ -246,7 +246,7 @@ Type
       | boolean  { Type "boolean" }
 
 Literal
-      : intLiteral     { ParseTypes.IntLiteral (read $1) }
+      : intLiteral     { ParseTypes.IntLiteral $1 }
       | charLiteral    { ParseTypes.CharLiteral (head $1) }
       | booleanLiteral {
           ParseTypes.BoolLiteral (if $1 == "true" then True else False)

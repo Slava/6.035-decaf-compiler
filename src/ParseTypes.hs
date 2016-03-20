@@ -54,7 +54,7 @@ data Statement = Assignment (Expression, Expression)
 instance ToJSON Statement where
 
 data Literal = StringLiteral String
-             | IntLiteral Int
+             | IntLiteral String
              | CharLiteral Char
              | BoolLiteral Bool
              deriving (Eq, Show, Generic)
