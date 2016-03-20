@@ -67,6 +67,7 @@ data Expression = BinOpExpression (String, Expression, Expression)
                 | LengthExpression Expression
                 | LocationExpression String
                 | LookupExpression String Expression
+                | FastLookupExpression String Expression
                 | LiteralExpression Literal
                 | MethodCallExpression MethodCall
                 | CondExpression { condCondition :: Expression

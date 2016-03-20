@@ -109,6 +109,7 @@ data VInstruction = VUnOp {- name -} String {- operand -} String {- argument nam
                   | VArrayLen String ValueRef
                   | VReturn String (Maybe ValueRef)
                   | VCondBranch String {-cond-} ValueRef {-true-} String {-false-} String
+                  | VUnreachable String
                   | VUncondBranch String String
                   | VMethodCall String {- is-callout? -} Bool {- fname -} String {- args -} [ValueRef]
   deriving (Eq, Show);
@@ -126,6 +127,7 @@ instance Namable VInstruction where
   getName (VCondBranch name _ _ _) = name
   getName (VUncondBranch name _) = name
   getName (VMethodCall name _ _ _) = name
+  getName (VUnreachable name ) = name
 
 
 instance Value VInstruction where
@@ -146,6 +148,7 @@ instance Value VInstruction where
     | op == "!="  =  TBool
     | op == "&"  =  TBool
     | op == "|"  =  TBool
+  getType _ (VUnreachable _) = TVoid
   getType _ (VStore _ toStore _) = TVoid
   getType b (VLookup _ toLookup) =
     case getDerivedType $ getType b toLookup of
@@ -287,6 +290,7 @@ getTerminator builder =
       (VReturn _ _ ) -> Just $ InstRef final
       (VCondBranch _ _ _ _) -> Just $ InstRef final
       (VUncondBranch _ _) -> Just $ InstRef final
+      (VUnreachable _) -> Just $ InstRef final
       _ -> Nothing
 
 instance Locationable (String,String) where
