@@ -319,10 +319,14 @@ semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
       (blockMerge, ar7) = addInstruction2 ar6 $ LLIR.createBlock "ifMerge"
       ar8 = addInstruction ar7 $ LLIR.setInsertionPoint block1
       (_, ar9) = semanticVerifyBlock ifTrue m2 ar8
-      (_, ar10) = addInstruction2 ar9 $ LLIR.createUncondBranch blockMerge
+      ar10 = case LLIR.getTerminator (contextBuilder ar9) of
+                Nothing -> snd $ addInstruction2 ar9 $ LLIR.createUncondBranch blockMerge
+                _ -> ar9
       ar11 = addInstruction ar10 $ LLIR.setInsertionPoint block2
       (_, ar12) = semanticVerifyBlock ifFalse m2 ar11
-      (_, ar13) = addInstruction2 ar12 $ LLIR.createUncondBranch blockMerge
+      ar13 = case LLIR.getTerminator (contextBuilder ar12) of
+                Nothing -> snd $ addInstruction2 ar12 $ LLIR.createUncondBranch blockMerge
+                _ -> ar12
       ar14 = addInstruction ar13 $ LLIR.setInsertionPoint blockMerge
       in (m, ar14)
 
