@@ -7,6 +7,7 @@
 module SemanticChecker where
 
 import Prelude
+import Data.Char (ord)
 import Text.Printf (printf)
 import ParseTypes
 import qualified Data.Map as HashMap
@@ -464,6 +465,7 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
 createLit :: Literal -> LLIR.ValueRef
 createLit (StringLiteral s) = LLIR.ConstString s
 createLit (IntLiteral s) = LLIR.ConstInt s
+createLit (CharLiteral s) = LLIR.ConstInt $ ord s
 createLit (BoolLiteral s) = LLIR.ConstBool s
 
 expectedOperandTypes :: String -> [LLIR.VType]
