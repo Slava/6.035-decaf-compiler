@@ -240,7 +240,7 @@ semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
         Just a  ->
           let (m2, ar2, val) = semanticVerifyExpression rexpr m ar
               (m3, ar3, idx) = semanticVerifyExpression expr m2 ar2
-              (val2, ar4) = addInstruction2 ar3 $ LLIR.createArrayStore val a idx
+              (val2, ar4) = addInstruction2 ar3 $ LLIR.createBoundedArrayStore val a idx
               ty1 = getType ar4 a
               ty2 = arrayInnerType $ getType ar4 a
               ty3 = getType ar4 val
@@ -462,7 +462,7 @@ semanticVerifyExpression (LookupExpression loc expr ) m ar =
       ty3 = getType ar3 v3
       ar4 = combineCx2 ar3 ((arrayInnerType ty2) /= LLIR.TVoid) $ printf "Type of array lookup expression incorrect -- expected array, received %s\n" (show ty2)
       ar5 = combineCx2 ar4 (ty3 == LLIR.TInt) $ printf "Type of array lookup expression incorrect -- expected %s, received %s\n" (show DInt) (show ty3)
-      (val, ar6) = addInstruction2 ar5 $ LLIR.createArrayLookup v2 v3
+      (val, ar6) = addInstruction2 ar5 $ LLIR.createBoundedArrayLookup v2 v3
       in (m3, ar6, val)
 
 createLit :: Literal -> Maybe LLIR.ValueRef
