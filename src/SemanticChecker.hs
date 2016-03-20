@@ -328,7 +328,10 @@ semanticVerifyStatement (IfStatement ifCond ifTrue ifFalse) m ar =
       ar13 = case LLIR.getTerminator (contextBuilder ar12) of
                 Nothing -> snd $ addInstruction2 ar12 $ LLIR.createUncondBranch blockMerge
                 _ -> ar12
-      ar14 = addInstruction ar13 $ LLIR.setInsertionPoint blockMerge
+      ar14 = case (LLIR.getTerminator (contextBuilder ar9), LLIR.getTerminator (contextBuilder ar12)) of
+                (Nothing,_) -> addInstruction ar13 $ LLIR.setInsertionPoint blockMerge
+                (_,Nothing) -> addInstruction ar13 $ LLIR.setInsertionPoint blockMerge
+                (_,_) -> addInstruction ar13 $ LLIR.removeEmptyBlock blockMerge
       in (m, ar14)
 
 semanticVerifyExpression :: Expression -> Module -> Context -> (Module, Context, LLIR.ValueRef)

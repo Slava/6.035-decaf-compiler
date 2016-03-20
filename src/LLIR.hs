@@ -440,6 +440,22 @@ createBlockF str func =
       block = VBlock (functionName func) str2 []
       in func {blocks = HashMap.insert str2 block $ blocks func, blockOrder=(blockOrder func)++[str2]}
 
+removeEmptyBlock :: String -> Builder -> Builder
+removeEmptyBlock str builder =
+  let updated :: Maybe Builder =
+        do
+          let pmod1 = pmod builder
+          let context = location builder
+          let fn = contextFunctionName context
+          func <- HashMap.lookup fn (functions pmod1)
+          let newBlocks = HashMap.delete str (blocks func)
+          func2 <- return $ func{blocks=newBlocks, blockOrder=delete str (blockOrder func)}
+          functions2 <- return $ HashMap.insert fn func2 (functions pmod1)
+          return $ builder{pmod=pmod1{functions=functions2}}
+      in case updated of
+        Just builder -> builder
+        Nothing -> builder
+
 createBlock :: String -> Builder -> (String, Builder)
 createBlock str builder =
   let updated :: Maybe (String,Builder) =
