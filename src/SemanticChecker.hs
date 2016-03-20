@@ -193,14 +193,16 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
 semanticVerifyDeclaration (Method rt name args body) m ar =
   let (m2, success) = addToModule m (LLIR.FunctionRef name) name
       ar2 = combineCx2 ar success ( printf "Could not redefine function %s\n" name )
-      m3 = makeChild m2 (Function $ stringToType rt)
-      (_,m4, ar3) = foldl (\(idx,m,ar) (Argument (t, s)) ->
-        let (m2, success) = addToModule m (LLIR.ArgRef idx name) s
-            ar2 = combineCx2 ar success ( printf "Could not redefine argument %s\n" s )
-            in (idx+1,m2, ar2)
-        ) (0,m3, ar2) args
+      ar3 = addInstruction ar2 $ LLIR.setInsertionPoint (name,"entry")
       ar4 = addInstruction ar3 $ LLIR.createFunction name (stringToVType rt) (map (\(Argument (t,n)) -> (stringToVType t)) args)
-      ar5 = addInstruction ar4 $ LLIR.setInsertionPoint (name,"entry")
+      m3 = makeChild m2 (Function $ stringToType rt)
+      (_,m4, ar5) = foldl (\(idx,m,cx) (Argument (t, s)) ->
+        let (arg,cx2) = addInstruction2 cx $ LLIR.createAlloca (stringToVType t) Nothing
+            (_,cx3)   = addInstruction2 cx2 $ LLIR.createStore (LLIR.ArgRef idx name) arg
+            (m2, success) = addToModule m arg s
+            cx4 = combineCx2 cx3 success $ printf "Could not redefine argument %s\n" s
+            in (idx+1,m2, cx4)
+        ) (0,m3, ar4) args
       (m5, ar6) = semanticVerifyBlock body m4 ar5
       ar7 = case LLIR.getTerminator (contextBuilder ar6) of
         Nothing -> snd $ addInstruction2 ar6 $ LLIR.createReturn Nothing
@@ -350,7 +352,7 @@ semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
           ty2 = getType ar3 v2
           ty3 = getType ar3 v3
           expcTypes = expectedOperandTypes op
-          cx1 = combineCx2 ar3 (ty2 `elem` expcTypes) $ printf "Incorrect type of left operand for op %s: %s \n%s\n%s\n%s\n" op (show ty2) (show v2) (show lexpr) (show $ LLIR.pmod $ contextBuilder ar3)
+          cx1 = combineCx2 ar3 (ty2 `elem` expcTypes) $ printf "Incorrect type of left operand for op %s: %s \n" op (show ty2)
           cx2 = combineCx2 cx1 (ty3 == ty2) $ printf "Incorrect type of right operand for op %s: %s; Expected: %s\n" op (show ty3) (show ty2)
           (val, cx3) = addInstruction2 cx2 $ LLIR.createBinOp op v2 v3
           in (m3, cx3, val)
@@ -390,7 +392,8 @@ semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
                                       CalloutExpression x -> let (m2, cx2, val) = semanticVerifyExpression x m cx in (m2, cx2, l ++ [val])
                                       CalloutStringLit x -> (m, cx, l ++ [LLIR.ConstString x])) (m, res, []) args
               (val, res3) = addInstruction2 res2 $ LLIR.createMethodCall name args2
-            in (m2, res3, val)
+              res4 = addDebug res3 $ printf "odd thing argT:%s\n%s\n%s\n" (show (getType cx vref)) (show vref) (show $ LLIR.pmod $ contextBuilder $ cx)
+            in (m2, res4, val)
         LLIR.TCallout ->
           let res = cx
               (m2, res2, args2) = foldl (\(m, cx, l) x -> case x of
@@ -467,7 +470,7 @@ expectedOperandTypes op
 verifyArgs :: [CalloutArg] -> [Data] -> String -> Module -> Context -> Context
 verifyArgs args argTypes methodName m cx =
   unify $ do
-    combineCxE cx ((length args) == (length argTypes)) $ printf "Wrong number of arguments passed: %d instead of %d for method %s\n" (length args) (length argTypes) methodName
+    combineCxE cx ((length args) == (length argTypes)) $ printf "Wrong number of arguments passed: %d instead of %d for method %s %s\n" (length args) (length argTypes) methodName (show argTypes)
     let l = zip args argTypes
     return $ foldl (\cx (arg, (Data name t)) -> case arg of
               CalloutStringLit lit -> combineCx2 cx (DString==t) $ checkArg DString t name methodName

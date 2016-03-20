@@ -324,7 +324,7 @@ createAlloca op operand1 builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
       builder2 :: Builder = appendInstruction (VAllocation name op operand1) builder{pmod=pmod2}
-      builder3 = builder2--addDebug builder2 $ printf "creating alloca inst\n"
+      builder3 = builder2--addDebug builder2 $ printf "creating alloca inst ctx:%s %s\n%s\n\n" (show $ location builder2 ) name (show $ pmod builder2)
       ref :: ValueRef = InstRef name in
       (ref, builder3)
 
