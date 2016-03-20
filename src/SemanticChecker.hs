@@ -201,8 +201,11 @@ semanticVerifyDeclaration (Method rt name args body) m ar =
         ) (0,m3, ar2) args
       ar4 = addInstruction ar3 $ LLIR.createFunction name (stringToVType rt) (map (\(Argument (t,n)) -> (stringToVType t)) args)
       ar5 = addInstruction ar4 $ LLIR.setInsertionPoint (name,"entry")
-      block = semanticVerifyBlock body m4 ar5 in
-        block
+      (m5, ar6) = semanticVerifyBlock body m4 ar5
+      ar7 = case LLIR.getTerminator (contextBuilder ar6) of
+        Nothing -> snd $ addInstruction2 ar6 $ LLIR.createReturn Nothing
+        _ -> ar6
+      in (m2, ar7)
 
 semanticVerifyBlock :: Block -> Module -> Context -> (Module, Context)
 semanticVerifyBlock (Block (decls, statements)) m ar =
