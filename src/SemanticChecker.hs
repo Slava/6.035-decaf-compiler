@@ -390,8 +390,7 @@ semanticVerifyExpression (LengthExpression expr) m ar =
       ty2 = getType ar2 v2
       ar3 = combineCx2 ar2 ((arrayInnerType ty2) /= LLIR.TVoid) $ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2)
       (val, ar4) = addInstruction2 ar3 $ LLIR.createArrayLen v2
-      ar5 = addDebug ar4 $ printf "%s" (show $ LLIR.pmod $ contextBuilder ar4)
-      in (m2, ar5, val)
+      in (m2, ar4, val)
 
 semanticVerifyExpression (LiteralExpression lit) m ar =
   (m, ar, createLit lit)
