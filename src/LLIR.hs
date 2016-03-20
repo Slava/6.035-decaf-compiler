@@ -80,7 +80,7 @@ instance Value ValueRef where
   getType _ (ConstBool _) = TBool
   getType builder (GlobalRef str) =
     case HashMap.lookup str (globals $ pmod builder) of
-      Just a -> TPointer a
+      Just (a,_) -> TPointer a
       Nothing -> TVoid
 
   getType _ (ConstString _) = TString
@@ -216,7 +216,7 @@ instance Namable VBlock where
 data PModule          = PModule {
   functions    :: HashMap.Map String VFunction,
   callouts     :: HashMap.Map String String,
-  globals      :: HashMap.Map String VType,
+  globals      :: HashMap.Map String (VType, Maybe Int),
   lastId       :: Int
 } deriving (Eq);
 
@@ -330,7 +330,7 @@ createBinOp op operand1 operand2 builder =
 createGlobal :: String -> VType -> Maybe Int -> Builder -> (ValueRef, Builder)
 createGlobal name op operand1 builder =
   let pmod1 = pmod builder
-      pmod2 = pmod1{globals=HashMap.insert name op (globals pmod1)}
+      pmod2 = pmod1{globals=HashMap.insert name (op,operand1) (globals pmod1)}
       builder2 :: Builder = appendInstruction (VAllocation name op operand1) builder{pmod=pmod2}
       ref :: ValueRef = GlobalRef name in
       (ref, builder2)
