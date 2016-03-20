@@ -139,7 +139,6 @@ semanticCheck configuration input = do
             hPutStrLn hOutput (show $ LLIR.pmod asts)
             hClose hOutput
           ]
-        Right a -> Right []
 
 codeGen :: Configuration -> String -> Either String [IO ()]
 codeGen configuration input = do
@@ -150,10 +149,8 @@ codeGen configuration input = do
   case (Parser.parse tokens) of
     Left  a -> Left a
     Right ast -> do
-      let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) (Right SemanticChecker.Dummy)
-      case asts of
-        Left errors -> Right errors
-        Right a -> Right [(printf "%s\n" (show a))]
+      let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
+        Right [(printf "%s\n" (show (LLIR.pmod asts)))]
   {--
         Right a -> do
           let asm = CodeGen.gen asts mod
