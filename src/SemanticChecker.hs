@@ -392,7 +392,7 @@ semanticVerifyExpression (MethodCallExpression (name, args)) m cx =
                                       CalloutExpression x -> let (m2, cx2, val) = semanticVerifyExpression x m cx in (m2, cx2, l ++ [val])
                                       CalloutStringLit x -> (m, cx, l ++ [LLIR.ConstString x])) (m, res, []) args
               (val, res3) = addInstruction2 res2 $ LLIR.createMethodCall name args2
-              res4 = addDebug res3 $ printf "odd thing argT:%s\n%s\n%s\n" (show (getType cx vref)) (show vref) (show $ LLIR.pmod $ contextBuilder $ cx)
+              res4 = addDebug res3 $ printf "odd thing argT:%s\n%s\n%s\n" (show (LLIR.getType (contextBuilder cx) vref)) (show vref) (show $ LLIR.pmod $ contextBuilder $ cx)
             in (m2, res4, val)
         LLIR.TCallout ->
           let res = cx
