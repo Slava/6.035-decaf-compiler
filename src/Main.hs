@@ -150,15 +150,11 @@ codeGen configuration input = do
     Left  a -> Left a
     Right ast -> do
       let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
-        Right [(printf "%s\n" (show (LLIR.pmod asts)))]
-  {--
-        Right a -> do
-          let asm = CodeGen.gen asts mod
-          let maybePath = Configuration.outputFileName configuration
-          case maybePath of
-            Just path -> Right [writeFile path asm]
-            Nothing -> Right [putStrLn asm]
---}
+        let asm = CodeGen.gen (LLIR.pmod asts)
+            maybePath = Configuration.outputFileName configuration in
+        case maybePath of
+          Just path -> Right [writeFile path asm]
+          Nothing -> Right [putStrLn asm]
 
 
 printAst :: Configuration -> String -> Either String [IO ()]
