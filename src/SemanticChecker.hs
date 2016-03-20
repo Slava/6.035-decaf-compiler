@@ -302,8 +302,7 @@ semanticVerifyStatement (LoopStatement lCond lBody lInit lIncr) m ar =
               ar12 = addInstruction ar10 $ LLIR.setInsertionPoint loopInc
               ar13 = snd $ semanticVerifyStatement (Assignment (loc, (BinOpExpression ("+", loc, (LiteralExpression $ IntLiteral amount))))) m3 ar12
               ar14 = combineCx2 ar13 (amount > 0) $ printf "Increment in for loop must be positive integer\n"
-              ar15 = addDebug ar14 $ printf "current context after inc:%s\n" (show $ LLIR.location $ contextBuilder $ ar14)
-              in ar15
+              in ar14
       (_, ar12, cond2) = semanticVerifyExpression lCond m2 ar11
       (_, ar13) = addInstruction2 ar12 $ LLIR.createCondBranch cond2 loopStart loopEnd
       ar14 = addInstruction ar13 $ LLIR.setInsertionPoint loopEnd
