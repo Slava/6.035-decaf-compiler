@@ -153,12 +153,15 @@ codeGen configuration input = do
       let ( mod, asts ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) (Right SemanticChecker.Dummy)
       case asts of
         Left errors -> Right errors
+        Right a -> Right [(printf "%s\n" (show a))]
+  {--
         Right a -> do
           let asm = CodeGen.gen asts mod
           let maybePath = Configuration.outputFileName configuration
           case maybePath of
             Just path -> Right [writeFile path asm]
             Nothing -> Right [putStrLn asm]
+--}
 
 
 printAst :: Configuration -> String -> Either String [IO ()]
