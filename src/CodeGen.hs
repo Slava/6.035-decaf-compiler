@@ -8,14 +8,17 @@ import qualified Data.Map as HashMap
 import qualified LLIR
 import LLIR
 
+getHeader :: String
 getHeader =
   ".section __TEXT,__text\n" ++
   ".globl _main\n"
 
+getMainHeader :: String
 getMainHeader =
   "\n" ++
   "_main:\n"
 
+getMainFooter :: String
 getMainFooter =
   -- exit(0)
   "\n" ++
@@ -36,6 +39,7 @@ getPreCall args =
   pushedArgs ++
   "  #/precall\n"
 
+getPostCall :: String
 getPostCall =
   "  #postcall\n" ++
   "  popa\n" ++
@@ -45,17 +49,26 @@ getProlog :: Int -> String
 getProlog localsSize =
   "\n" ++
   "  #prolog\n" ++
+  "  pusha\n" ++
   "  enter $" ++ (show localsSize) ++ " $0\n" ++
-  "  #/prolog\n"
+  "  #prolog\n"
+
+getEpilog :: String
+getEpilog =
+  "\n" ++
+  "  #epilog\n" ++
+  "  leave\n" ++
+  "  popa\n" ++
+  "  #epilog\n"
 
 genGlobals :: HashMap.Map String (VType, Maybe Int) -> String
 genGlobals globals =
     "  .bss\n" ++ (intercalate "" $ map genGlobal $ HashMap.toList globals)
 
 genGlobal :: (String, (VType, Maybe Int)) -> String
-genGlobal (name, (typ, Nothing)) =
+genGlobal (name, (_, Nothing)) =
     "  .global_" ++ name ++ ":\n    .zero 8\n" -- Need to adjust for arrays
-genGlobal (name, (typ, Just size)) =
+genGlobal (name, (_, Just size)) =
     "  .global_" ++ name ++ ":\n    .zero " ++ show (8 * size) ++ "\n"
 
 genCallouts :: HashMap.Map String String -> String
@@ -64,25 +77,27 @@ genCallouts callouts =
 
 genFunction :: LLIR.VFunction -> String
 genFunction f =
-  snd $ foldl (\(table, s) name ->
+  getProlog (8 * (length $ (LLIR.functionInstructions f))) ++
+  (snd $ foldl (\(table, s) name ->
     let block = HashMap.lookup name $ LLIR.blocks f
         res = genBlock block f table in
       (fst res, s ++ (snd res)))
-  (HashMap.empty :: HashMap.Map String String, "") $ LLIR.blockOrder f
+  (HashMap.empty :: HashMap.Map String String, "") $ LLIR.blockOrder f) ++
+  getEpilog
 
 genBlock :: Maybe LLIR.VBlock -> LLIR.VFunction -> HashMap.Map String String -> (HashMap.Map String String, String)
 genBlock Nothing _ table = (table, "BAD\n")
 genBlock (Just block) f table = 
-  foldl (\(table, acc) name ->
+  foldl (\(t, acc) name ->
           let instruction = HashMap.lookup name $ LLIR.functionInstructions f
-              res = genInstruction instruction table in
+              res = genInstruction instruction t in
                 (fst res, acc ++ snd res))
-        (HashMap.empty :: HashMap.Map String String, "")
+        (table, "")
         (LLIR.blockInstructions block)
 
 valLoc :: LLIR.ValueRef -> HashMap.Map String String -> String
 valLoc (ConstInt int) _ = "$" ++ show int
-valLoc (ArgRef idx name) table = 
+valLoc (ArgRef _ name) table = 
   case HashMap.lookup name table of
     Just s -> s
     Nothing -> "ERROR"
