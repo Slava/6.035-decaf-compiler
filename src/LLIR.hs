@@ -264,13 +264,19 @@ getInstruction (Builder pmod (Context fname _) _) name =
     func <- HashMap.lookup fname (functions pmod)
     HashMap.lookup name (functionInstructions func)
 
-getTerminator :: Builder -> Maybe String
+getTerminator :: Builder -> Maybe ValueRef
 getTerminator builder =
   do
     func <- getFunction builder (contextFunctionName $ location builder)
     block <- HashMap.lookup (contextBlockName $ location builder) $ blocks func
     let lst = blockInstructions block
-    if ( length lst )== 0 then Nothing else Just $ last lst
+    final <- if ( length lst )== 0 then Nothing else Just $ last lst
+    fv <- HashMap.lookup final $ functionInstructions func
+    case fv of
+      (VReturn _ _ ) -> Just $ InstRef final
+      (VCondBranch _ _ _ _) -> Just $ InstRef final
+      (VUncondBranch _ _) -> Just $ InstRef final
+      _ -> Nothing
 
 instance Locationable (String,String) where
   setInsertionPoint (str1,str2) builder = setInsertionPoint (Context str1 str2 ) builder

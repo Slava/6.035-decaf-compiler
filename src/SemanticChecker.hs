@@ -207,7 +207,8 @@ semanticVerifyDeclaration (Method rt name args body) m ar =
       ar7 = case LLIR.getTerminator (contextBuilder ar6) of
         Nothing -> snd $ addInstruction2 ar6 $ LLIR.createReturn Nothing
         _ -> ar6
-      in (m2, ar7)
+      ar8 = addDebug ar7 $ printf "term = %s\n" (show $ LLIR.getTerminator $ contextBuilder ar6)
+      in (m2, ar8)
 
 semanticVerifyBlock :: Block -> Module -> Context -> (Module, Context)
 semanticVerifyBlock (Block (decls, statements)) m ar =
