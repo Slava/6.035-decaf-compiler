@@ -80,7 +80,8 @@ instance Value ValueRef where
   getType _ (ConstBool _) = TBool
   getType builder (GlobalRef str) =
     case HashMap.lookup str (globals $ pmod builder) of
-      Just (a,_) -> TPointer a
+      Just (a,Nothing) -> TPointer a
+      Just (a,Just _) -> TArray a
       Nothing -> TVoid
 
   getType _ (ConstString _) = TString

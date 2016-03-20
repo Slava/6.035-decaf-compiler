@@ -229,17 +229,23 @@ semanticVerifyStatement (Assignment (lexpr, rexpr)) m ar =
         Just a  ->
           let (m2, ar2, val) = semanticVerifyExpression rexpr m ar
               (val2, ar3) = addInstruction2 ar2 $ LLIR.createStore val a
-              ar4 = combineCx2 ar3 ((LLIR.getDerivedTypeN $ getType ar3 a)==(getType ar3 val)) $ printf "Type of assignment into array incorrect\n"
+              ty2 = LLIR.getDerivedTypeN $ getType ar3 a
+              ty3 = getType ar3 val
+              ar4 = combineCx2 ar3 (ty2==ty3) $ printf "Type of assignment incorrect %s : %s\n" (show ty2) (show ty3)
               in (m2, ar4)
     LookupExpression name expr ->
       case (moduleLookup m name) of
         Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" name)
         Just a  ->
           let (m2, ar2, val) = semanticVerifyExpression rexpr m ar
-              (m3, ar3, idx) = semanticVerifyExpression rexpr m2 ar2
+              (m3, ar3, idx) = semanticVerifyExpression expr m2 ar2
               (val2, ar4) = addInstruction2 ar3 $ LLIR.createArrayStore val a idx
-              ar5 = combineCx2 ar4 ((arrayInnerType $ getType ar4 a)==( getType ar4 val)) $ printf "Type of assignment into array incorrect\n"
-              ar6 = combineCx2 ar5 ((getType ar4 idx)==LLIR.TInt) $ printf "Type of assignment into array incorrect\n"
+              ty1 = getType ar4 a
+              ty2 = arrayInnerType $ getType ar4 a
+              ty3 = getType ar4 val
+              ar5 = combineCx2 ar4 (ty2==( getType ar4 val)) $ printf "Type of assignment into array incorrect %s : %s -- %s\n" (show ty2) (show ty3) (show ty1)
+              ty4 = getType ar4 idx
+              ar6 = combineCx2 ar5 (ty4==LLIR.TInt) $ printf "Type of array index incorrect %s\n" (show ty4)
               in (m3, ar6)
     _ -> (m, combineCx2 ar False $ printf "Cannot assign to non variable / non array\n")
 
@@ -382,9 +388,10 @@ semanticVerifyExpression (NotExpression expr) m ar =
 semanticVerifyExpression (LengthExpression expr) m ar =
   let (m2, ar2, v2) = semanticVerifyExpression expr m ar
       ty2 = getType ar2 v2
-      ar3 = combineCx2 ar2 ((arrayInnerType ty2) /= LLIR.TBool) $ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2)
+      ar3 = combineCx2 ar2 ((arrayInnerType ty2) /= LLIR.TVoid) $ printf "Type of length expression incorrect -- expected array, received %s\n" (show ty2)
       (val, ar4) = addInstruction2 ar3 $ LLIR.createArrayLen v2
-      in (m2, ar4, val)
+      ar5 = addDebug ar4 $ printf "%s" (show $ LLIR.pmod $ contextBuilder ar4)
+      in (m2, ar5, val)
 
 semanticVerifyExpression (LiteralExpression lit) m ar =
   (m, ar, createLit lit)
@@ -440,8 +447,10 @@ semanticVerifyExpression (LocationExpression loc) m ar =
   case (moduleLookup m loc) of
     Nothing -> (m, combineCx2 ar False $ printf "Variable %s not in scope\n" loc, LLIR.InstRef "")
     Just a  ->
-      let (val, ar2) = addInstruction2 ar $ LLIR.createLookup a
-          in (m, ar2, val)
+      case getType ar a of
+        (LLIR.TArray _) -> (m, ar, a)
+        _ ->  let (val, ar2) = addInstruction2 ar $ LLIR.createLookup a
+                in (m, ar2, val)
 
 semanticVerifyExpression (LookupExpression loc expr ) m ar =
   let (m2, ar2, v2) = semanticVerifyExpression (LocationExpression loc) m ar
