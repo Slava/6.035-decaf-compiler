@@ -1,9 +1,4 @@
-int inc(int x) {
-  return x + 1;
-}
-
+callout printf;
 void main () {
-  int x;
-  x = 1;
-  x = x + 2;
+  printf("hi %d\n", 5);
 }

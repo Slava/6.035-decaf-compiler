@@ -49,30 +49,18 @@ setVariableLoc (FxContext global table offset) var loc = FxContext global (HashM
 
 getHeader :: String
 getHeader =
-  ".section __TEXT,__text\n" ++
-  ".globl _main\n"
-
-getMainHeader :: String
-getMainHeader =
-  "\n" ++
-  "_main:\n"
-
-getMainFooter :: String
-getMainFooter =
-  -- exit(0)
-  "\n" ++
-  "  movl $0x2000001, %eax           # exit 0\n" ++
-  "  syscall"
+  ".section .text\n" ++
+  ".globl main\n"
 
 -- args: [(Name, size)]
 getPreCall :: [(String, Int)] -> String
 getPreCall args =
-  let argRegs = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d", "%eax", "%r10d", "%r11d", "%ebx", "%r14d", "%r15d", "%r12d", "%13d"]
+  let argRegs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
       remainingArgs = drop (length argRegs) args
       argsInRegisters = (foldl (\acc (arg, reg) -> acc ++ "  movq " ++  (fst arg) ++ ", " ++ reg ++ "\n") "" (zip args argRegs))
       pushedArgs = (foldl (\acc arg -> acc ++ "  push " ++ (fst arg) ++ "\n") "" (reverse remainingArgs)) in
   "  #precall\n" ++
-  "  pusha                           # save registers\n" ++
+  pusha ++
   "  movq %rsp, %rbp                 # new stack frame\n" ++
   argsInRegisters ++
   pushedArgs ++
@@ -81,16 +69,15 @@ getPreCall args =
 getPostCall :: String
 getPostCall =
   "  #postcall\n" ++
-  "  popa\n" ++
+  popa ++
   "  #/postcall\n"
 
 getProlog :: Int -> Int -> String
 getProlog argsLength localsSize =
-  let argRegs = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d", "%eax", "%r10d", "%r11d", "%ebx", "%r14d", "%r15d", "%r12d", "%13d"] in
+  let argRegs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"] in
   "  #prolog\n" ++
-  "  pusha\n" ++
-  "  enter $" ++ (show (argsLength * 8 + localsSize)) ++ " $0\n" ++
-  unwords (map (\(x, y) -> "  movq " ++ x ++ " -" ++ (show $ 8 * y) ++ "(%rbp)\n") $ zip argRegs [1..argsLength]) ++
+  "  enter $" ++ (show (argsLength * 8 + localsSize)) ++ ", $0\n" ++
+  unwords (map (\(x, y) -> "  movq " ++ x ++ ", -" ++ (show $ 8 * y) ++ "(%rbp)\n") $ zip argRegs [1..argsLength]) ++
   "  #prolog\n"
 
 getEpilog :: String
@@ -98,8 +85,8 @@ getEpilog =
   " \n" ++
   "  #epilog\n" ++
   "  leave\n" ++
-  "  popa\n" ++
-  "  #epilog\n"
+  "  ret\n" ++
+  "  #/epilog\n"
 
 genGlobals :: HashMap.Map String (VType, Maybe Int) -> String
 genGlobals globals =
@@ -132,8 +119,8 @@ genFunction cx f =
                          (ncx, str) = genBlock cx block f in
                      (ncx, s ++ str))
                    (ncx1, "") $ LLIR.blockOrder f
-      strRes = "_" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
-    (cx, strRes)
+      strRes = LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
+    (global ncx2, strRes)
 
 genBlock :: FxContext -> Maybe LLIR.VBlock -> LLIR.VFunction -> (FxContext, String)
 genBlock cx Nothing _ = (cx, "BAD\n")
@@ -184,9 +171,9 @@ genInstruction cx (Just (VUnOp _ op val)) =
   let loc = valLoc val $ variables cx 
       final = case val of
         ConstInt _ -> ""
-        _ -> "  movq %rax " ++ loc ++ "\n" in
+        _ -> "  movq %rax, " ++ loc ++ "\n" in
     (cx, 
-    "  movq " ++ loc ++ "%rax\n" ++
+    "  movq " ++ loc ++ ", %rax\n" ++
     "  " ++ op ++ " %rax %rax\n" ++ -- what do I do with this value? I should be creating a new temporary variable and adding a new entry in the table for it
     final)
 
@@ -194,7 +181,7 @@ genInstruction cx (Just (VBinOp _ op val1 val2)) =
     let loc1 = valLoc val1 $ variables cx
         loc2 = valLoc val2 $ variables cx in
           (cx,
-          "  movq" ++ loc1 ++ "%rax\n" ++
+          "  movq" ++ loc1 ++ ", %rax\n" ++
           "  " ++ op ++ loc2 ++ "% rax\n" ++ -- what do I do with this value? I should be creating a new temporary variable and adding a new entry in the table for it
           "TODO")
 
@@ -207,7 +194,7 @@ genInstruction cx (Just (VMethodCall name isName fname args)) =
       precall = getPreCall nargs
       postcall = getPostCall
       destination = (show $ 8 * (-1)) ++ "(%rbp)" in
-        (setVariableLoc ncx name destination, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ destination ++ "\n")
+        (setVariableLoc ncx name destination, precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
 genInstruction cx (Just (VStore _ _ _)) =
   (cx, "TODO")
@@ -224,8 +211,11 @@ genInstruction cx (Just (VArrayLookup _ _ _)) =
 genInstruction cx (Just (VArrayLen _ _)) =
   (cx, "TODO")
 
-genInstruction cx (Just (VReturn _ _)) =
-  (cx, "TODO")
+genInstruction cx (Just (VReturn _ maybeRef)) =
+  case maybeRef of
+    Just ref ->
+      (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n")
+    Nothing -> (cx, "")
 
 genInstruction cx (Just (VCondBranch _ _ _ _)) =
   (cx, "TODO")
@@ -237,26 +227,34 @@ genInstruction cx (Just (VUncondBranch _ _)) =
   (cx, "TODO")
 
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
-genArg cx (InstRef ref) =
+genArg cx x =
+  let (ncx, asm) = genAccess cx x in
+  (ncx, (asm, 8))
+
+genAccess :: FxContext -> ValueRef -> (FxContext, String)
+genAccess cx (InstRef ref) =
   {-- TODO: look up global vars in the CGContext! --}
-  (cx, (lookupVariable cx ref, 8))
+  (cx, lookupVariable cx ref)
   
-genArg cx (ConstInt i) =
-  (cx, ("$" ++ (show i), 8))
+genAccess cx (ConstInt i) =
+  (cx, "$" ++ (show i))
 
-genArg cx (ConstString s) =
+genAccess cx (ConstString s) =
   let (ncx, id) = getConstStrId cx s in
-    (ncx, ("$" ++ id, 8))
+    (ncx, "$" ++ id)
 
-genArg cx (ConstBool b) =
-  (cx, ("$" ++ (if b then "1" else "0"), 8))
+genAccess cx (ConstBool b) =
+  (cx, "$" ++ (if b then "1" else "0"))
 
-genArg cx (ArgRef i funcName) =
-  (cx, (lookupVariable cx $ funcName ++ "@" ++ (show i), 8))
+genAccess cx (ArgRef i funcName) =
+  (cx, lookupVariable cx $ funcName ++ "@" ++ (show i))
 
 genConstants cx =
+  ".section .rodata\n" ++
   foldl (\str (label, cnst) ->
           str ++ "\n" ++ label ++ ":\n  .string " ++ cnst) "" (constStrs cx)
+
+
 
 gen :: LLIR.PModule -> String
 gen mod =
@@ -270,9 +268,45 @@ gen mod =
                   (ncx, asm ++ str)) 
               (cx, "") fxs
   in
-    getHeader ++
     (genGlobals globals) ++
+    getHeader ++
     (genCallouts callouts) ++
     fns ++
     "\n\n" ++
     (genConstants cx2)
+
+pusha =
+  "  push %rax\n" ++
+  "  push %rbx\n" ++
+  "  push %rcx\n" ++
+  "  push %rdx\n" ++
+  "  push %rsi\n" ++
+  "  push %rdi\n" ++
+  "  push %rbp\n" ++
+  "  push %rsp\n" ++
+  "  push %r8\n" ++
+  "  push %r9\n" ++
+  "  push %r10\n" ++
+  "  push %r11\n" ++
+  "  push %r12\n" ++
+  "  push %r13\n" ++
+  "  push %r14\n" ++
+  "  push %r15\n"
+
+popa =
+  "  pop %r15\n" ++
+  "  pop %r14\n" ++
+  "  pop %r13\n" ++
+  "  pop %r12\n" ++
+  "  pop %r11\n" ++
+  "  pop %r10\n" ++
+  "  pop %r9\n" ++
+  "  pop %r8\n" ++
+  "  pop %rsp\n" ++
+  "  pop %rbp\n" ++
+  "  pop %rdi\n" ++
+  "  pop %rsi\n" ++
+  "  pop %rdx\n" ++
+  "  pop %rcx\n" ++
+  "  pop %rbx\n" ++
+  "  pop %rax\n"
