@@ -190,12 +190,14 @@ genInstruction cx (Just (VBinOp _ op val1 val2)) table =
 genInstruction cx (Just (VMethodCall name isName fname args)) table =
   -- add all constant strings to the list
   let ncx = foldl (\cx arg -> case arg of
-                              ConstString s -> fst $ getConstStrId cx s
-                              _ -> cx) cx args in
+                                ConstString s -> fst $ getConstStrId cx s
+                                _ -> cx)
+                  cx args in
   -- push arguments
   let (ncx, ntable, nargs) = foldl (\(cx, table, acc) arg ->
-                             let (ncx, narg) = genArg cx table arg in
-                             (ncx, table, acc ++ narg)) (cx, table, []) args in
+                                      let (ncx, narg) = genArg cx table arg in
+                                        (ncx, table, acc ++ narg))
+                                   (cx, table, []) args in
   let precall = getPreCall nargs
       postcall = getPostCall in
   (ncx, HashMap.insert name "" ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ name ++ "\n")
