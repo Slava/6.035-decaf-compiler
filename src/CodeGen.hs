@@ -22,6 +22,26 @@ getConstStrId cx str =
    }, id)
   where id = ".const_str" ++ (show (nextConstStrId cx))
 
+data FxContext = FxContext {
+  variables :: HashMap.Map String String,
+  offset :: Int
+}
+
+newContext :: FxContext
+newContext = FxContext HashMap.empty 8
+
+updateOffset :: FxContext -> FxContext
+updateOffset (FxContext table offset) = FxContext table $ offset + 8
+
+lookupVariable :: FxContext -> String -> String
+lookupVariable (FxContext table _) var = case HashMap.lookup var table of
+                                           Just a -> a
+                                           Nothing -> "BAD"
+
+setVariableLoc :: FxContext -> String -> String -> FxContext
+setVariableLoc (FxContext table offset) var loc = FxContext (HashMap.adjust update var table) offset
+  where update _ = loc
+
 getHeader :: String
 getHeader =
   ".section __TEXT,__text\n" ++
@@ -137,6 +157,10 @@ valLoc (FunctionRef name) table =
     Just s -> s
     Nothing -> "ERROR"
 
+genArg :: CGContext -> HashMap.Map String String -> ValueRef -> (String, Int)
+genArg cx table (InstRef ref) = 
+  ("TODO", 0)
+
 genInstruction :: CGContext -> Maybe LLIR.VInstruction -> HashMap.Map String String -> (CGContext, HashMap.Map String String, String)
 genInstruction cx Nothing table = (cx, table, "BAD\n")
 
@@ -166,19 +190,16 @@ genInstruction cx (Just (VBinOp _ op val1 val2)) table =
 genInstruction cx (Just (VMethodCall name isName fname args)) table =
   -- add all constant strings to the list
   let ncx = foldl (\cx arg -> case arg of
-                              ConstString s -> getConstStrId cx s
-                              _ -> cx) in
+                              ConstString s -> fst $ getConstStrId cx s
+                              _ -> cx) cx args in
   -- push arguments
   let (ncx, ntable, nargs) = foldl (\(cx, table, acc) arg ->
                              let (ncx, narg) = genArg cx table arg in
                              (ncx, table, acc ++ narg)) (cx, table, []) args in
   let precall = getPreCall nargs
-  let postcall = getPostCall in
-  (ncx, HashMap.insert name destination ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ name ++ "\n")
+      postcall = getPostCall in
+  (ncx, HashMap.insert name "" ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ name ++ "\n")
 
-genArg :: CGContext -> HashMap.Map String String -> ValueRef -> (String, Int)
-genArg cx table (InstRef ref) =
-  
 
 genInstruction cx (Just (VStore _ _ _)) table =
   (cx, table, "TODO")
