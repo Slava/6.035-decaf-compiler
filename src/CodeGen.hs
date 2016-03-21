@@ -246,18 +246,19 @@ genArg cx table (ConstInt i) =
   ("$" ++ (show i), 8)
 
 genArg cx table (ConstString s) =
-  let (ncx, id) = getConstStrId cx s
-  ("$" ++ id, 8)
+  let (ncx, id) = getConstStrId cx s in
+    ("$" ++ id, 8)
 
 gen :: LLIR.PModule -> String
 gen mod =
   let globals = LLIR.globals mod
       callouts = LLIR.callouts mod
       fxs = HashMap.elems $ LLIR.functions mod
-      cx = CGContext {constStrs = [], nextConstStrId = 0} in
-  let (cx2, fns) =
+      cx = CGContext {constStrs = [], nextConstStrId = 0}
+      (cx2, fns) =
         foldl (\(cx, asm) fn ->
                 let (ncx, str) = genFunction cx fn in
-                (ncx, asm ++ str)) (cx, "") fxs
+                  (ncx, asm ++ str)) 
+              (cx, "") fxs
   in
     getHeader ++ (genGlobals globals) ++ (genCallouts callouts) ++ fns
