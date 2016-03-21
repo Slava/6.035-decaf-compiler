@@ -90,7 +90,7 @@ getProlog argsLength localsSize =
   "  #prolog\n" ++
   "  pusha\n" ++
   "  enter $" ++ (show (argsLength * 8 + localsSize)) ++ " $0\n" ++
-  unwords (map (\(x, y) -> "  movq " ++ x ++ " -" ++ (show $ 8 * y) ++ "(%bpx)\n") $ zip argRegs [1..argsLength]) ++
+  unwords (map (\(x, y) -> "  movq " ++ x ++ " -" ++ (show $ 8 * y) ++ "(%rbp)\n") $ zip argRegs [1..argsLength]) ++
   "  #prolog\n"
 
 getEpilog :: String
@@ -117,13 +117,21 @@ genCallouts callouts =
 
 genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
 genFunction cx f =
-  let prolog = getProlog (length (arguments f)) (8 * (length $ (LLIR.functionInstructions f)))
-      (ncx, blocksStr) = foldl
+  let argsLength = length $ LLIR.arguments f
+      prolog = getProlog argsLength (8 * (length $ (LLIR.functionInstructions f)))
+      ncx1 = foldl
+                   (\cx (idx, arg) ->
+                     setVariableLoc cx 
+                                    (LLIR.functionName f ++ "@" ++ show (idx - 1)) 
+                                    (" -" ++ (show $ 8 * idx) ++ "(%rbp)\n"))
+                   (newFxContext cx)
+                   (zip [1..argsLength] $ LLIR.arguments f)
+      (ncx2, blocksStr) = foldl
                    (\(cx, s) name ->
                      let block = HashMap.lookup name $ LLIR.blocks f
                          (ncx, str) = genBlock cx block f in
                      (ncx, s ++ str))
-                   (newFxContext cx, "") $ LLIR.blockOrder f
+                   (ncx1, "") $ LLIR.blockOrder f
       strRes = "_" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
     (cx, strRes)
 
@@ -198,7 +206,7 @@ genInstruction cx (Just (VMethodCall name isName fname args)) =
                            (cx, []) args
       precall = getPreCall nargs
       postcall = getPostCall
-      destination = (show $ 8 * (-1)) ++ "(%bpx)" in
+      destination = (show $ 8 * (-1)) ++ "(%rbp)" in
         (setVariableLoc ncx name destination, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ destination ++ "\n")
 
 genInstruction cx (Just (VStore _ _ _)) =
