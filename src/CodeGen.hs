@@ -191,7 +191,7 @@ genInstruction cx (Just (VMethodCall name isName fname args)) table =
                                    (cx, table, []) args in
   let precall = getPreCall nargs
       postcall = getPostCall
-      destination = (show (8 * (-1)) {- should be offset Tony! -}) ++ "(%bpx)" in
+      destination = (show -1 * 8 {- should be offset Tony! -}) ++ "(%bpx)" in
   (ncx, HashMap.insert name destination ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ destination ++ "\n")
 
 genInstruction cx (Just (VStore _ _ _)) table =
