@@ -254,6 +254,10 @@ genArg cx (ConstBool b) =
 genArg cx (ArgRef i funcName) =
   (cx, (lookupVariable cx $ funcName ++ "@" ++ (show i), 8))
 
+genConstants cx =
+  foldl (\str (label, cnst) ->
+          str ++ "\n" ++ label ++ ":\n  .string " ++ cnst) "" (constStrs cx)
+
 gen :: LLIR.PModule -> String
 gen mod =
   let globals = LLIR.globals mod
@@ -266,4 +270,9 @@ gen mod =
                   (ncx, asm ++ str)) 
               (cx, "") fxs
   in
-    getHeader ++ (genGlobals globals) ++ (genCallouts callouts) ++ fns
+    getHeader ++
+    (genGlobals globals) ++
+    (genCallouts callouts) ++
+    fns ++
+    "\n\n" ++
+    (genConstants cx2)
