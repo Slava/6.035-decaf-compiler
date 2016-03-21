@@ -245,6 +245,15 @@ genArg cx table (ConstString s) =
   let (ncx, id) = getConstStrId cx s in
     (ncx, ("$" ++ id, 8))
 
+genArg cx table (ConstBool b) =
+  (cx, ("$" ++ (if b then "1" else "0"), 8))
+
+genArg cx table (ArgRef i funcName) =
+  let r = HashMap.lookup funcName ++ "@" ++ (show i) table in
+  case r of
+    Just addr -> (cx, (addr, 8))
+    Nothing -> (cx, ("BAD", 8))
+
 gen :: LLIR.PModule -> String
 gen mod =
   let globals = LLIR.globals mod
