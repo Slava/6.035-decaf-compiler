@@ -44,8 +44,8 @@ getPreCall :: [(String, Int)] -> String
 getPreCall args =
   let argRegs = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d", "%eax", "%r10d", "%r11d", "%ebx", "%r14d", "%r15d", "%r12d", "%13d"]
       remainingArgs = drop (length argRegs) args
-      argsInRegisters = (foldl (\acc (arg, reg) -> acc ++ "  movq " ++  (fst arg) ++ " " ++ reg ++ "\n") "" (zip args argRegs))
-      pushedArgs = (foldl (\acc arg -> acc ++ "  push " ++ (fst arg) ++ "\n") "" remainingArgs) in
+      argsInRegisters = (foldl (\acc (arg, reg) -> acc ++ "  movq " ++  (fst arg) ++ ", " ++ reg ++ "\n") "" (zip args argRegs))
+      pushedArgs = (foldl (\acc arg -> acc ++ "  push " ++ (fst arg) ++ "\n") "" (reverse remainingArgs)) in
   "  #precall\n" ++
   "  pusha                           # save registers\n" ++
   "  movq %rsp, %rbp                 # new stack frame\n" ++
@@ -164,7 +164,21 @@ genInstruction cx (Just (VBinOp _ op val1 val2)) table =
           "TODO")
 
 genInstruction cx (Just (VMethodCall name isName fname args)) table =
-  (cx, table, name ++ "<<" ++ fname ++ (show isName))
+  -- add all constant strings to the list
+  let ncx = foldl (\cx arg -> case arg of
+                              ConstString s -> getConstStrId cx s
+                              _ -> cx) in
+  -- push arguments
+  let (ncx, ntable, nargs) = foldl (\(cx, table, acc) arg ->
+                             let (ncx, narg) = genArg cx table arg in
+                             (ncx, table, acc ++ narg)) (cx, table, []) args in
+  let precall = getPreCall nargs
+  let postcall = getPostCall in
+  (ncx, HashMap.insert name destination ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ name ++ "\n")
+
+genArg :: CGContext -> HashMap.Map String String -> ValueRef -> (String, Int)
+genArg cx table (InstRef ref) =
+  
 
 genInstruction cx (Just (VStore _ _ _)) table =
   (cx, table, "TODO")
