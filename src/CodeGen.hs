@@ -188,20 +188,15 @@ genInstruction cx (Just (VBinOp _ op val1 val2)) table =
           "TODO")
 
 genInstruction cx (Just (VMethodCall name isName fname args)) table =
-  -- add all constant strings to the list
-  let ncx = foldl (\cx arg -> case arg of
-                                ConstString s -> fst $ getConstStrId cx s
-                                _ -> cx)
-                  cx args in
   -- push arguments
   let (ncx, ntable, nargs) = foldl (\(cx, table, acc) arg ->
                                       let (ncx, narg) = genArg cx table arg in
                                         (ncx, table, acc ++ narg))
                                    (cx, table, []) args in
   let precall = getPreCall nargs
-      postcall = getPostCall in
-  (ncx, HashMap.insert name "" ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ name ++ "\n")
-
+      postcall = getPostCall
+      destination = (show 8 * -1 {- should be offset Tony! -}) ++ "(%bpx)" in
+  (ncx, HashMap.insert name destination ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ destination ++ "\n")
 
 genInstruction cx (Just (VStore _ _ _)) table =
   (cx, table, "TODO")
@@ -238,6 +233,21 @@ genInstruction cx (Just (VUnreachable _)) table =
 genInstruction cx (Just (VUncondBranch _ _)) table =
   (cx, table, "TODO")
 
+
+genArg :: CGContext -> HashMap.Map String String -> ValueRef -> (String, Int)
+genArg cx table (InstRef ref) =
+  {-- TODO: look up global vars in the CGContext! --}
+  let r = HashMap.lookup ref table in
+  case r of
+    Just addr -> (addr, 8)
+    Nothing -> ("BAD", 8)
+
+genArg cx table (ConstInt i) =
+  ("$" ++ (show i), 8)
+
+genArg cx table (ConstString s) =
+  let (ncx, id) = getConstStrId cx s
+  ("$" ++ id, 8)
 
 gen :: LLIR.PModule -> String
 gen mod =
