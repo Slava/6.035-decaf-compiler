@@ -39,13 +39,14 @@ updateOffset :: FxContext -> FxContext
 updateOffset (FxContext global table offset) = FxContext global table $ offset + 8
 
 lookupVariable :: FxContext -> String -> String
-lookupVariable (FxContext _ table _) var = case HashMap.lookup var table of
+lookupVariable (FxContext _ table _) var = 
+  if head var == '$' then var else case HashMap.lookup var table of
                                            Just a -> a
-                                           Nothing -> "BAD"
+                                           Nothing -> "Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table)
 
 setVariableLoc :: FxContext -> String -> String -> FxContext
-setVariableLoc (FxContext global table offset) var loc = FxContext global (HashMap.adjust update var table) offset
-  where update _ = loc
+setVariableLoc (FxContext global table offset) var loc = FxContext global (HashMap.alter update var table) offset
+  where update _ = Just loc
 
 getHeader :: String
 getHeader =
@@ -61,7 +62,6 @@ getPreCall args =
       pushedArgs = (foldl (\acc arg -> acc ++ "  push " ++ (fst arg) ++ "\n") "" (reverse remainingArgs)) in
   "  #precall\n" ++
   pusha ++
-  "  movq %rsp, %rbp                 # new stack frame\n" ++
   argsInRegisters ++
   pushedArgs ++
   "  #/precall\n"
@@ -76,7 +76,7 @@ getProlog :: Int -> Int -> String
 getProlog argsLength localsSize =
   let argRegs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"] in
   "  #prolog\n" ++
-  "  enter $" ++ (show (argsLength * 8 + localsSize)) ++ ", $0\n" ++
+  "  enter $" ++ (show (argsLength * 16 + localsSize)) ++ ", $0\n" ++
   unwords (map (\(x, y) -> "  movq " ++ x ++ ", -" ++ (show $ 8 * y) ++ "(%rbp)\n") $ zip argRegs [1..argsLength]) ++
   "  #prolog\n"
 
@@ -105,7 +105,7 @@ genCallouts callouts =
 genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
 genFunction cx f =
   let argsLength = length $ LLIR.arguments f
-      prolog = getProlog argsLength (8 * (length $ (LLIR.functionInstructions f)))
+      prolog = getProlog argsLength (16 * (length $ (LLIR.functionInstructions f)))
       ncx1 = foldl
                    (\cx (idx, arg) ->
                      setVariableLoc cx 
@@ -132,33 +132,6 @@ genBlock cx (Just block) f =
         (cx, "")
         (LLIR.blockInstructions block)
 
-valLoc :: LLIR.ValueRef -> HashMap.Map String String -> String
-valLoc (ConstInt int) _ = "$" ++ show int
-valLoc (ArgRef _ name) table = 
-  case HashMap.lookup name table of
-    Just s -> s
-    Nothing -> "ERROR"
-valLoc (InstRef name) table =
-  case HashMap.lookup name table of
-    Just s -> s
-    Nothing -> "ERROR"
-valLoc (ConstString name) table =
-  case HashMap.lookup name table of
-    Just s -> s
-    Nothing -> "ERROR"
-valLoc (CalloutRef name) table =
-  case HashMap.lookup name table of
-    Just s -> s
-    Nothing -> "ERROR"
-valLoc (GlobalRef name) table =
-  case HashMap.lookup name table of
-    Just s -> s
-    Nothing -> "ERROR"
-valLoc (FunctionRef name) table =
-  case HashMap.lookup name table of
-    Just s -> s
-    Nothing -> "ERROR"
-
 genInstruction :: FxContext -> Maybe LLIR.VInstruction -> (FxContext, String)
 genInstruction cx Nothing = (cx, "BAD\n")
 
@@ -168,7 +141,7 @@ genInstruction cx (Just (VAllocation _ typ size)) =
     Nothing -> (cx, "")
 
 genInstruction cx (Just (VUnOp _ op val)) =
-  let loc = valLoc val $ variables cx 
+  let loc = lookupVariable cx $ snd (genAccess cx val) 
       final = case val of
         ConstInt _ -> ""
         _ -> "  movq %rax, " ++ loc ++ "\n" in
@@ -177,13 +150,17 @@ genInstruction cx (Just (VUnOp _ op val)) =
     "  " ++ op ++ " %rax %rax\n" ++ -- what do I do with this value? I should be creating a new temporary variable and adding a new entry in the table for it
     final)
 
-genInstruction cx (Just (VBinOp _ op val1 val2)) =
-    let loc1 = valLoc val1 $ variables cx
-        loc2 = valLoc val2 $ variables cx in
-          (cx,
-          "  movq" ++ loc1 ++ ", %rax\n" ++
-          "  " ++ op ++ loc2 ++ "% rax\n" ++ -- what do I do with this value? I should be creating a new temporary variable and adding a new entry in the table for it
-          "TODO")
+genInstruction cx (Just (VBinOp result op val1 val2)) =
+    let loc1 = lookupVariable cx $ snd (genAccess cx val1) 
+        loc2 = lookupVariable cx $ snd (genAccess cx val2) 
+        destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
+        ncx = updateOffset $ setVariableLoc cx result destination in
+          (ncx,
+          "  movq " ++ loc1 ++ ", %rax\n" ++
+          "  " ++ genOp op ++ " " ++ loc2 ++ ", %rax\n" ++
+          "  movq %rax, " ++ destination ++ "\n" -- ++
+          --"  old cx was: " ++ show (HashMap.toList $ variables cx) ++ ", new cx is: " ++ show (HashMap.toList $ variables ncx)
+          )
 
 genInstruction cx (Just (VMethodCall name isName fname args)) =
   -- push arguments
@@ -193,8 +170,9 @@ genInstruction cx (Just (VMethodCall name isName fname args)) =
                            (cx, []) args
       precall = getPreCall nargs
       postcall = getPostCall
-      destination = (show $ 8 * (-1)) ++ "(%rbp)" in
-        (setVariableLoc ncx name destination, precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
+      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)" in
+        (updateOffset $ setVariableLoc ncx name destination, 
+         precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
 genInstruction cx (Just (VStore _ _ _)) =
   (cx, "TODO")
@@ -226,6 +204,12 @@ genInstruction cx (Just (VUnreachable _)) =
 genInstruction cx (Just (VUncondBranch _ _)) =
   (cx, "TODO")
 
+genOp :: String -> String
+genOp "+" = "addq"
+genOp "-" = "subq"
+genOp "*" = "mulq"
+genOp "/" = "divq"
+
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
 genArg cx x =
   let (ncx, asm) = genAccess cx x in
@@ -253,7 +237,6 @@ genConstants cx =
   ".section .rodata\n" ++
   foldl (\str (label, cnst) ->
           str ++ "\n" ++ label ++ ":\n  .string " ++ cnst) "" (constStrs cx)
-
 
 
 gen :: LLIR.PModule -> String
