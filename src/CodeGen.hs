@@ -157,10 +157,6 @@ valLoc (FunctionRef name) table =
     Just s -> s
     Nothing -> "ERROR"
 
-genArg :: CGContext -> HashMap.Map String String -> ValueRef -> (String, Int)
-genArg cx table (InstRef ref) = 
-  ("TODO", 0)
-
 genInstruction :: CGContext -> Maybe LLIR.VInstruction -> HashMap.Map String String -> (CGContext, HashMap.Map String String, String)
 genInstruction cx Nothing table = (cx, table, "BAD\n")
 
@@ -191,11 +187,11 @@ genInstruction cx (Just (VMethodCall name isName fname args)) table =
   -- push arguments
   let (ncx, ntable, nargs) = foldl (\(cx, table, acc) arg ->
                                       let (ncx, narg) = genArg cx table arg in
-                                        (ncx, table, acc ++ narg))
+                                        (ncx, table, acc ++ [narg]))
                                    (cx, table, []) args in
   let precall = getPreCall nargs
       postcall = getPostCall
-      destination = (show 8 * -1 {- should be offset Tony! -}) ++ "(%bpx)" in
+      destination = (show (8 * (-1)) {- should be offset Tony! -}) ++ "(%bpx)" in
   (ncx, HashMap.insert name destination ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ destination ++ "\n")
 
 genInstruction cx (Just (VStore _ _ _)) table =
@@ -234,20 +230,20 @@ genInstruction cx (Just (VUncondBranch _ _)) table =
   (cx, table, "TODO")
 
 
-genArg :: CGContext -> HashMap.Map String String -> ValueRef -> (String, Int)
+genArg :: CGContext -> HashMap.Map String String -> ValueRef -> (CGContext, (String, Int))
 genArg cx table (InstRef ref) =
   {-- TODO: look up global vars in the CGContext! --}
   let r = HashMap.lookup ref table in
   case r of
-    Just addr -> (addr, 8)
-    Nothing -> ("BAD", 8)
+    Just addr -> (cx, (addr, 8))
+    Nothing -> (cx, ("BAD", 8))
 
 genArg cx table (ConstInt i) =
-  ("$" ++ (show i), 8)
+  (cx, ("$" ++ (show i), 8))
 
 genArg cx table (ConstString s) =
   let (ncx, id) = getConstStrId cx s in
-    ("$" ++ id, 8)
+    (ncx, ("$" ++ id, 8))
 
 gen :: LLIR.PModule -> String
 gen mod =
