@@ -84,11 +84,13 @@ getPostCall =
   "  popa\n" ++
   "  #/postcall\n"
 
-getProlog :: Int -> String
-getProlog localsSize =
+getProlog :: Int -> Int -> String
+getProlog argsLength localsSize =
+  let argRegs = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d", "%eax", "%r10d", "%r11d", "%ebx", "%r14d", "%r15d", "%r12d", "%13d"] in
   "  #prolog\n" ++
   "  pusha\n" ++
-  "  enter $" ++ (show localsSize) ++ " $0\n" ++
+  "  enter $" ++ (show (argsLength * 8 + localsSize)) ++ " $0\n" ++
+  unwords (map (\(x, y) -> "  movq " ++ x ++ " -" ++ (show $ 8 * y) ++ "(%bpx)\n") $ zip argRegs [1..argsLength]) ++
   "  #prolog\n"
 
 getEpilog :: String
@@ -115,7 +117,7 @@ genCallouts callouts =
 
 genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
 genFunction cx f =
-  let prolog = getProlog (8 * (length $ (LLIR.functionInstructions f)))
+  let prolog = getProlog (length (arguments f)) (8 * (length $ (LLIR.functionInstructions f)))
       (ncx, blocksStr) = foldl
                    (\(cx, s) name ->
                      let block = HashMap.lookup name $ LLIR.blocks f
