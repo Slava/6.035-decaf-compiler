@@ -8,6 +8,20 @@ import qualified Data.Map as HashMap
 import qualified LLIR
 import LLIR
 
+data CGContext = CGContext {
+  -- label, constant string
+  constStrs :: [(String, String)],
+  nextConstStrId :: Int
+};
+
+getConstStrId :: CGContext -> String -> (CGContext, String)
+getConstStrId cx str =
+  (CGContext {
+      constStrs = (constStrs cx) ++ [(id, str)],
+      nextConstStrId = (nextConstStrId cx) + 1
+   }, id)
+  where id = ".const_str" ++ (show (nextConstStrId cx))
+
 getHeader :: String
 getHeader =
   ".section __TEXT,__text\n" ++
@@ -74,25 +88,26 @@ genCallouts :: HashMap.Map String String -> String
 genCallouts callouts =
     "" -- Not sure how to declare global strings
 
-genFunction :: LLIR.VFunction -> String
-genFunction f =
-  "_" ++ LLIR.functionName f ++ ":\n" ++
-  getProlog (8 * (length $ (LLIR.functionInstructions f))) ++
-  (snd $ foldl (\(table, s) name ->
-    let block = HashMap.lookup name $ LLIR.blocks f
-        res = genBlock block f table in
-      (fst res, s ++ (snd res)))
-  (HashMap.empty :: HashMap.Map String String, "") $ LLIR.blockOrder f) ++
-  getEpilog
+genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
+genFunction cx f =
+  let prolog = getProlog (8 * (length $ (LLIR.functionInstructions f))) in
+  let (ncx, locals, blocksStr) = foldl
+                   (\(cx, table, s) name ->
+                     let block = HashMap.lookup name $ LLIR.blocks f
+                         (ncx, hm, str) = genBlock cx block f table in
+                     (ncx, hm, s ++ str))
+                   (cx, HashMap.empty :: HashMap.Map String String, "") $ LLIR.blockOrder f in
+   let strRes = "_" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
+   (cx, strRes)
 
-genBlock :: Maybe LLIR.VBlock -> LLIR.VFunction -> HashMap.Map String String -> (HashMap.Map String String, String)
-genBlock Nothing _ table = (table, "BAD\n")
-genBlock (Just block) f table = 
-  foldl (\(t, acc) name ->
+genBlock :: CGContext -> Maybe LLIR.VBlock -> LLIR.VFunction -> HashMap.Map String String -> (CGContext, HashMap.Map String String, String)
+genBlock cx Nothing _ table = (cx, table, "BAD\n")
+genBlock cx (Just block) f table = 
+  foldl (\(cx, t, acc) name ->
           let instruction = HashMap.lookup name $ LLIR.functionInstructions f
-              res = genInstruction instruction t in
-                (fst res, acc ++ snd res))
-        (table, "")
+              (ncx, table, str) = genInstruction cx instruction t in
+                (ncx, table, acc ++ str))
+        (cx, table, "")
         (LLIR.blockInstructions block)
 
 valLoc :: LLIR.ValueRef -> HashMap.Map String String -> String
@@ -122,37 +137,80 @@ valLoc (FunctionRef name) table =
     Just s -> s
     Nothing -> "ERROR"
 
-genInstruction :: Maybe LLIR.VInstruction -> HashMap.Map String String -> (HashMap.Map String String, String)
-genInstruction Nothing table = (table, "BAD\n")
+genInstruction :: CGContext -> Maybe LLIR.VInstruction -> HashMap.Map String String -> (CGContext, HashMap.Map String String, String)
+genInstruction cx Nothing table = (cx, table, "BAD\n")
 
-genInstruction (Just (VAllocation _ typ size)) table =
+genInstruction cx (Just (VAllocation _ typ size)) table =
   case size of
-    Just i -> (table, "")
-    Nothing -> (table, "")
+    Just i -> (cx, table, "")
+    Nothing -> (cx, table, "")
 
-genInstruction (Just (VUnOp _ op val)) table =
+genInstruction cx (Just (VUnOp _ op val)) table =
   let loc = valLoc val table
       final = case val of
         ConstInt _ -> ""
         _ -> "  movq %rax " ++ loc ++ "\n" in
-    (table, 
+    (cx, table, 
     "  movq " ++ loc ++ "%rax\n" ++
     "  " ++ op ++ " %rax %rax\n" ++ -- what do I do with this value? I should be creating a new temporary variable and adding a new entry in the table for it
     final)
 
-genInstruction (Just (VBinOp _ op val1 val2)) table =
+genInstruction cx (Just (VBinOp _ op val1 val2)) table =
     let loc1 = valLoc val1 table
         loc2 = valLoc val2 table in
-          (table, 
+          (cx, table, 
           "  movq" ++ loc1 ++ "%rax\n" ++
           "  " ++ op ++ loc2 ++ "% rax\n" ++ -- what do I do with this value? I should be creating a new temporary variable and adding a new entry in the table for it
           "TODO")
+
+genInstruction cx (Just (VMethodCall name isName fname args)) table =
+  (cx, table, name ++ "<<" ++ fname ++ (show isName))
+
+genInstruction cx (Just (VStore _ _ _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VLookup _ _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VArrayStore _ _ _ _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VArrayLookup _ _ _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VArrayLen _ _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VReturn _ _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VCondBranch _ _ _ _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VUnreachable _)) table =
+  (cx, table, "TODO")
+
+
+genInstruction cx (Just (VUncondBranch _ _)) table =
+  (cx, table, "TODO")
 
 
 gen :: LLIR.PModule -> String
 gen mod =
   let globals = LLIR.globals mod
       callouts = LLIR.callouts mod
-      fxs = HashMap.elems $ LLIR.functions mod in
-        getHeader ++
-        (genGlobals globals) ++ (genCallouts callouts) ++ (intercalate "\n\n" (map genFunction fxs))
+      fxs = HashMap.elems $ LLIR.functions mod
+      cx = CGContext {constStrs = [], nextConstStrId = 0} in
+  let (cx2, fns) =
+        foldl (\(cx, asm) fn ->
+                let (ncx, str) = genFunction cx fn in
+                (ncx, asm ++ str)) (cx, "") fxs
+  in
+    getHeader ++ (genGlobals globals) ++ (genCallouts callouts) ++ fns
