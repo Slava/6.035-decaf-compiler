@@ -188,11 +188,11 @@ genInstruction cx (Just (VMethodCall name isName fname args)) table =
   let (ncx, ntable, nargs) = foldl (\(cx, table, acc) arg ->
                                       let (ncx, narg) = genArg cx table arg in
                                         (ncx, table, acc ++ [narg]))
-                                   (cx, table, []) args in
-  let precall = getPreCall nargs
+                                   (cx, table, []) args
+      precall = getPreCall nargs
       postcall = getPostCall
-      destination = (show -1 * 8 {- should be offset Tony! -}) ++ "(%bpx)" in
-  (ncx, HashMap.insert name destination ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ destination ++ "\n")
+      destination = (show $ 8 * (-1)) ++ "(%bpx)" in
+        (ncx, HashMap.insert name destination ntable, precall ++ "  call " ++ fname ++ "\n  movq %eax " ++ destination ++ "\n")
 
 genInstruction cx (Just (VStore _ _ _)) table =
   (cx, table, "TODO")
