@@ -384,7 +384,7 @@ semanticVerifyExpression (NotExpression expr) m ar =
       ty2 = getType ar2 v2
       ar3 = combineCx2 ar2 (ty2 == LLIR.TBool) $ printf "Type of not expression incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
       (val, ar4) = addInstruction2 ar3 $ LLIR.createUnaryOp "!" v2
-      in (m2, ar4, v2)
+      in (m2, ar4, val)
 
 semanticVerifyExpression (LengthExpression expr) m ar =
   let (m2, ar2, v2) = semanticVerifyExpression expr m ar
