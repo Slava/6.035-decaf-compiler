@@ -135,24 +135,32 @@ genBlock cx (Just block) f =
 genInstruction :: FxContext -> Maybe LLIR.VInstruction -> (FxContext, String)
 genInstruction cx Nothing = (cx, "BAD\n")
 
-genInstruction cx (Just (VAllocation _ typ size)) =
-  case size of
-    Just i -> (cx, "")
-    Nothing -> (cx, "")
+genInstruction cx (Just (VAllocation result _ size)) =
+  let s = case size of
+                 Just i -> i
+                 Nothing -> 0
+      idx = case size of
+                 Just i -> i
+                 Nothing -> 1
+      destination = (show $ ((s * 8) + offset cx) * (-1)) ++ "(%rbp)"
+      in
+        ((iterate updateOffset $ setVariableLoc cx result destination) !! idx, "")
 
-genInstruction cx (Just (VUnOp _ op val)) =
-  let loc = lookupVariable cx $ snd (genAccess cx val) 
-      final = case val of
-        ConstInt _ -> ""
-        _ -> "  movq %rax, " ++ loc ++ "\n" in
-    (cx, 
+genInstruction cx (Just (VUnOp result op val)) =
+  let loc = snd $ genAccess cx val 
+      instruction = case op of
+        "-" -> "  negq %rax\n"
+        "!" -> "  test %rax, %rax\n  setz %al\n"
+      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
+      ncx = updateOffset $ setVariableLoc cx result destination in
+    (ncx, 
     "  movq " ++ loc ++ ", %rax\n" ++
-    "  " ++ op ++ " %rax %rax\n" ++ -- what do I do with this value? I should be creating a new temporary variable and adding a new entry in the table for it
-    final)
+    instruction ++
+    "  movq %rax, " ++ destination ++ "\n")
 
 genInstruction cx (Just (VBinOp result op val1 val2)) =
-    let loc1 = lookupVariable cx $ snd (genAccess cx val1) 
-        loc2 = lookupVariable cx $ snd (genAccess cx val2) 
+    let loc1 = snd $ genAccess cx val1 
+        loc2 = snd $ genAccess cx val2 
         destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
         ncx = updateOffset $ setVariableLoc cx result destination in
           (ncx,
@@ -174,20 +182,30 @@ genInstruction cx (Just (VMethodCall name isName fname args)) =
         (updateOffset $ setVariableLoc ncx name destination, 
          precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
-genInstruction cx (Just (VStore _ _ _)) =
-  (cx, "TODO")
+genInstruction cx (Just v@(VStore _ val var)) =
+  let loc1 = snd $ genAccess cx val
+      loc2 = snd $ genAccess cx var in
+    (cx,
+    --show v ++ "\n" ++
+    "  movq " ++ loc1 ++ ", %rax\n" ++
+    "  movq %rax, " ++ loc2 ++ "\n")
 
-genInstruction cx (Just (VLookup _ _)) =
-  (cx, "TODO")
+genInstruction cx (Just (VLookup result val)) =
+  let loc = snd $ genAccess cx val
+      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
+      ncx = updateOffset $ setVariableLoc cx result destination in
+        (ncx,
+        "  movq " ++ loc ++ ", %rax\n" ++
+        "  movq %rax, " ++ destination ++ "\n")
 
 genInstruction cx (Just (VArrayStore _ _ _ _)) =
-  (cx, "TODO")
+  (cx, "TODO\n")
 
 genInstruction cx (Just (VArrayLookup _ _ _)) =
-  (cx, "TODO")
+  (cx, "TODO\n")
 
 genInstruction cx (Just (VArrayLen _ _)) =
-  (cx, "TODO")
+  (cx, "TODO\n")
 
 genInstruction cx (Just (VReturn _ maybeRef)) =
   case maybeRef of
@@ -196,13 +214,13 @@ genInstruction cx (Just (VReturn _ maybeRef)) =
     Nothing -> (cx, "")
 
 genInstruction cx (Just (VCondBranch _ _ _ _)) =
-  (cx, "TODO")
+  (cx, "TODO\n")
 
 genInstruction cx (Just (VUnreachable _)) =
-  (cx, "TODO")
+  (cx, "TODO\n")
 
 genInstruction cx (Just (VUncondBranch _ _)) =
-  (cx, "TODO")
+  (cx, "TODO\n")
 
 genOp :: String -> String
 genOp "+" = "addq"
