@@ -49,3 +49,13 @@ Mac OS X
 
 Install GHC version 7.10.2 from https://ghcformacosx.github.io/ and you are done.
 
+Linux virtualization on Mac OS X
+===
+
+Using [Vagrant](https://www.vagrantup.com/) run Ubuntu 12.04.5 LTS and then
+follow the instructions from above. To prepare and run Vagrant run:
+
+```bash
+vagrant up
+vagrant ssh
+```
