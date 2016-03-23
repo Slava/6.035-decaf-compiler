@@ -210,9 +210,8 @@ genInstruction cx (Just (VArrayLen _ _)) =
 
 genInstruction cx (Just (VReturn _ maybeRef)) =
   case maybeRef of
-    Just ref ->
-      (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n")
-    Nothing -> (cx, "")
+    Just ref -> (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n  leave\n  ret\n")
+    Nothing -> (cx, "  leave\n  ret\n")
 
 genInstruction cx (Just (VCondBranch _ cond true false)) =
   let loc = snd $ genAccess cx cond in
@@ -239,6 +238,8 @@ genOp "<"  loc = "  cmp "   ++ loc ++ ", %rax\n  setl %al\n"
 genOp "<=" loc = "  cmp "   ++ loc ++ ", %rax\n  setle %al\n"
 genOp ">" loc  = "  cmp "   ++ loc ++ ", %rax\n  setg %al\n"
 genOp ">=" loc = "  cmp "   ++ loc ++ ", %rax\n  setge %al\n"
+genOp "||" loc = "  or "    ++ loc ++ ", %rax\n  cmp %rax, $0\n  setnz %al\n"
+genOp "&&" loc = "  and "   ++ loc ++ ", %rax\n  cmp %rax, $0\n  setnz %al\n"
 
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
 genArg cx x =
@@ -262,6 +263,9 @@ genAccess cx (ConstBool b) =
 
 genAccess cx (ArgRef i funcName) =
   (cx, if i < 6 then lookupVariable cx $ funcName ++ "@" ++ (show i) else (show $ 16 + 8 * (i - 6)) ++ "(%rbp)")
+
+genAccess cx (GlobalRef name) =
+  (cx, ".global_" ++ name)
 
 genConstants cx =
   ".section .rodata\n" ++
