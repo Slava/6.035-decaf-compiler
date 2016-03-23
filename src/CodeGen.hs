@@ -110,7 +110,7 @@ genFunction cx f =
                    (\cx (idx, arg) ->
                      setVariableLoc cx 
                                     (LLIR.functionName f ++ "@" ++ show (idx - 1)) 
-                                    (" -" ++ (show $ 8 * idx) ++ "(%rbp)\n"))
+                                    (" -" ++ (show $ 8 * idx) ++ "(%rbp)"))
                    (newFxContext cx)
                    (zip [1..argsLength] $ LLIR.arguments f)
       (ncx2, blocksStr) = foldl
@@ -289,8 +289,6 @@ pusha =
   "  push %rdx\n" ++
   "  push %rsi\n" ++
   "  push %rdi\n" ++
-  "  push %rbp\n" ++
-  "  push %rsp\n" ++
   "  push %r8\n" ++
   "  push %r9\n" ++
   "  push %r10\n" ++
@@ -309,8 +307,6 @@ popa =
   "  pop %r10\n" ++
   "  pop %r9\n" ++
   "  pop %r8\n" ++
-  "  pop %rsp\n" ++
-  "  pop %rbp\n" ++
   "  pop %rdi\n" ++
   "  pop %rsi\n" ++
   "  pop %rdx\n" ++
