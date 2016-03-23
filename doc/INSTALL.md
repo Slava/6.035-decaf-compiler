@@ -1,0 +1,51 @@
+Requirements
+===
+
+Tested on:
+
+- `ghc` of version 7.10.2
+- `cabal` of version 1.22
+- `gcc` of version 4.6.3
+
+Ubuntu 12.04.5 LTS
+===
+
+Install GCC:
+
+```bash
+sudo apt-get update
+sudo apt-get install gcc
+```
+
+Install Haskell and Cabal through a 3rd party PPA:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y software-properties-common python-software-properties
+sudo add-apt-repository -y ppa:hvr/ghc
+sudo apt-get update
+sudo apt-get install -y cabal-install-1.22 ghc-7.10.2
+cat >> ~/.bashrc <<EOF
+export PATH="\$HOME/.cabal/bin:/opt/cabal/1.22/bin:/opt/ghc/7.10.2/bin:\$PATH"
+EOF
+export PATH=~/.cabal/bin:/opt/cabal/1.22/bin:/opt/ghc/7.10.2/bin:$PATH
+```
+
+Update Cabal's sources:
+
+```bash
+cabal update
+```
+
+Build the project:
+
+```bash
+bash ./build.sh
+```
+
+
+Mac OS X
+===
+
+Install GHC version 7.10.2 from https://ghcformacosx.github.io/ and you are done.
+
