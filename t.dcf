@@ -1,4 +1,13 @@
 callout printf;
 void main () {
-  printf("hi %d\n", 5);
+  boolean a, b, c, d, e, f, g, h;
+  a = 1 == 1;
+  b = 1 != 2;
+  c = 1 < 2;
+  d = 1 <= 2;
+  e = 1 <= 1;
+  f = 1 > 2;
+  g = 2 > 1;
+  h = 2 >= 2;
+  printf("%d %d %d %d %d %d %d\n", a, b, c, d, e, f, g, h);
 }
