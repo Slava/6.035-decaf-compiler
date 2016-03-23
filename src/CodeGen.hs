@@ -165,7 +165,7 @@ genInstruction cx (Just (VBinOp result op val1 val2)) =
         ncx = updateOffset $ setVariableLoc cx result destination in
           (ncx,
           "  movq " ++ loc1 ++ ", %rax\n" ++
-          "  " ++ genOp op ++ " " ++ loc2 ++ ", %rax\n" ++
+          genOp op loc2 ++
           "  movq %rax, " ++ destination ++ "\n" -- ++
           --"  old cx was: " ++ show (HashMap.toList $ variables cx) ++ ", new cx is: " ++ show (HashMap.toList $ variables ncx)
           )
@@ -222,11 +222,17 @@ genInstruction cx (Just (VUnreachable _)) =
 genInstruction cx (Just (VUncondBranch _ _)) =
   (cx, "TODO\n")
 
-genOp :: String -> String
-genOp "+" = "addq"
-genOp "-" = "subq"
-genOp "*" = "mulq"
-genOp "/" = "divq"
+genOp :: String -> String -> String
+genOp "+" loc  = "  addq "  ++ loc ++ ", %rax\n"
+genOp "-" loc  = "  subq "  ++ loc ++ ", %rax\n"
+genOp "*" loc  = "  imulq " ++ loc ++ ", %rax\n"
+genOp "/" loc  = "  idivq " ++ loc ++ "\n"
+genOp "==" loc = "  cmp "   ++ loc ++ ", %rax\n  setz %al\n"
+genOp "!=" loc = "  cmp "   ++ loc ++ ", %rax\n  setnz %al\n"
+genOp "<"  loc = "  cmp "   ++ loc ++ ", %rax\n  setl %al\n"
+genOp "<=" loc = "  cmp "   ++ loc ++ ", %rax\n  setle %al\n"
+genOp ">" loc  = "  cmp "   ++ loc ++ ", %rax\n  setg %al\n"
+genOp ">=" loc = "  cmp "   ++ loc ++ ", %rax\n  setge %al\n"
 
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
 genArg cx x =
