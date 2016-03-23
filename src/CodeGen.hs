@@ -18,8 +18,8 @@ newCGContext :: CGContext
 newCGContext = CGContext [] 0
 
 getConstStrId :: FxContext -> String -> (FxContext, String)
-getConstStrId (FxContext (CGContext strs next) table offset) str =
-  (FxContext newGlobal table offset, id)
+getConstStrId (FxContext name (CGContext strs next) table offset) str =
+  (FxContext name newGlobal table offset, id)
   where id = ".const_str" ++ (show next)
         newGlobal = CGContext{
           constStrs = strs ++ [(id, str)],
@@ -27,25 +27,26 @@ getConstStrId (FxContext (CGContext strs next) table offset) str =
         }
 
 data FxContext = FxContext {
+  name   :: String,
   global :: CGContext,
   variables :: HashMap.Map String String,
   offset :: Int
 }
 
-newFxContext :: CGContext -> FxContext
-newFxContext global = FxContext global HashMap.empty 8
+newFxContext :: String -> CGContext -> FxContext
+newFxContext name global = FxContext name global HashMap.empty 8
 
 updateOffset :: FxContext -> FxContext
-updateOffset (FxContext global table offset) = FxContext global table $ offset + 8
+updateOffset (FxContext name global table offset) = FxContext name global table $ offset + 8
 
 lookupVariable :: FxContext -> String -> String
-lookupVariable (FxContext _ table _) var = 
+lookupVariable (FxContext _ _ table _) var = 
   if head var == '$' then var else case HashMap.lookup var table of
                                            Just a -> a
                                            Nothing -> "Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table)
 
 setVariableLoc :: FxContext -> String -> String -> FxContext
-setVariableLoc (FxContext global table offset) var loc = FxContext global (HashMap.alter update var table) offset
+setVariableLoc (FxContext name global table offset) var loc = FxContext name global (HashMap.alter update var table) offset
   where update _ = Just loc
 
 getHeader :: String
@@ -111,7 +112,7 @@ genFunction cx f =
                      setVariableLoc cx 
                                     (LLIR.functionName f ++ "@" ++ show (idx - 1)) 
                                     (" -" ++ (show $ 8 * idx) ++ "(%rbp)"))
-                   (newFxContext cx)
+                   (newFxContext (LLIR.functionName f) cx)
                    (zip [1..argsLength] $ LLIR.arguments f)
       (ncx2, blocksStr) = foldl
                    (\(cx, s) name ->
@@ -124,13 +125,13 @@ genFunction cx f =
 
 genBlock :: FxContext -> Maybe LLIR.VBlock -> LLIR.VFunction -> (FxContext, String)
 genBlock cx Nothing _ = (cx, "BAD\n")
-genBlock cx (Just block) f = 
-  foldl (\(cx, acc) name ->
+genBlock cx (Just block) f = (ncx, LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block ++ ":\n" ++ s)
+  where (ncx, s) = foldl (\(cx, acc) name ->
           let instruction = HashMap.lookup name $ LLIR.functionInstructions f
               (ncx, str) = genInstruction cx instruction in
                 (ncx, acc ++ str))
-        (cx, "")
-        (LLIR.blockInstructions block)
+          (cx, "")
+          (LLIR.blockInstructions block)
 
 genInstruction :: FxContext -> Maybe LLIR.VInstruction -> (FxContext, String)
 genInstruction cx Nothing = (cx, "BAD\n")
@@ -213,14 +214,15 @@ genInstruction cx (Just (VReturn _ maybeRef)) =
       (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n")
     Nothing -> (cx, "")
 
-genInstruction cx (Just (VCondBranch _ _ _ _)) =
-  (cx, "TODO\n")
+genInstruction cx (Just (VCondBranch _ cond true false)) =
+  let loc = snd $ genAccess cx cond in
+    (cx, "  movq " ++ loc ++ ", %rax\n  test %rax, %rax\n  jz " ++ name cx ++ "_" ++ false ++ "\n")
 
 genInstruction cx (Just (VUnreachable _)) =
-  (cx, "TODO\n")
+  (cx, "  BAD\n")
 
-genInstruction cx (Just (VUncondBranch _ _)) =
-  (cx, "TODO\n")
+genInstruction cx (Just (VUncondBranch _ dest)) =
+  (cx, "  jmp " ++ name cx ++ "_" ++ dest ++ "\n")
 
 genOp :: String -> String -> String
 genOp "+" loc  = "  addq "  ++ loc ++ ", %rax\n"
@@ -255,7 +257,7 @@ genAccess cx (ConstBool b) =
   (cx, "$" ++ (if b then "1" else "0"))
 
 genAccess cx (ArgRef i funcName) =
-  (cx, lookupVariable cx $ funcName ++ "@" ++ (show i))
+  (cx, if i < 6 then lookupVariable cx $ funcName ++ "@" ++ (show i) else (show $ 16 + 8 * (i - 6)) ++ "(%rbp)")
 
 genConstants cx =
   ".section .rodata\n" ++
