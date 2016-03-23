@@ -40,7 +40,8 @@ addGlobals (CGContext constStrs nextConstStrId globalArrays) globals =
 data FxContext = FxContext {
   name   :: String,
   global :: CGContext,
-  variables :: HashMap.Map String String,
+  -- variables maps registers to a label/reg + offset
+  variables :: HashMap.Map String (String, Int),
   offset :: Int
 }
 
@@ -53,13 +54,22 @@ updateOffset (FxContext name global table offset) = FxContext name global table 
 updateOffsetBy :: FxContext -> Int -> FxContext
 updateOffsetBy (FxContext name global table offset) size = FxContext name global table $ offset + size
 
+locStr (place, offset) =
+  if offset /= 0 then (show offset) ++ "(" ++ place ++ ")" else place
+
 lookupVariable :: FxContext -> String -> String
 lookupVariable (FxContext _ _ table _) var = 
   if head var == '$' then var else case HashMap.lookup var table of
-                                           Just a -> a
+                                           Just (place, offset) -> locStr (place, offset)
                                            Nothing -> "Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table)
 
-setVariableLoc :: FxContext -> String -> String -> FxContext
+lookupVariableWithOffset :: FxContext -> String -> (String, Int)
+lookupVariableWithOffset (FxContext _ _ table _) var = 
+  case HashMap.lookup var table of
+    Just loc -> loc
+    Nothing -> ("Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table), 0)
+
+setVariableLoc :: FxContext -> String -> (String, Int) -> FxContext
 setVariableLoc (FxContext name global table offset) var loc = FxContext name global (HashMap.alter update var table) offset
   where update _ = Just loc
 
@@ -143,21 +153,21 @@ genFunction cx f =
                    (\cx (idx, arg) ->
                      setVariableLoc cx 
                                     (LLIR.functionName f ++ "@" ++ show (idx - 1)) 
-                                    (" -" ++ (show $ 8 * idx) ++ "(%rbp)"))
+                                    ("%rbp", (-8) * idx))
                    (newFxContext (LLIR.functionName f) cx)
                    (zip [1..argsLength] $ LLIR.arguments f)
       (ncx2, blocksStr) = foldl
                    (\(cx, s) name ->
                      let block = HashMap.lookup name $ LLIR.blocks f
-                         (ncx, str) = genBlock cx block f in
+                         (ncx, str) = genBlock cx block name f in
                      (ncx, s ++ str))
                    (ncx1, "") $ LLIR.blockOrder f
       strRes = LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
     (global ncx2, strRes)
 
-genBlock :: FxContext -> Maybe LLIR.VBlock -> LLIR.VFunction -> (FxContext, String)
-genBlock cx Nothing _ = (cx, "BAD\n")
-genBlock cx (Just block) f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
+genBlock :: FxContext -> Maybe LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
+genBlock cx Nothing name _ = (cx, "# no op block. Block " ++ name ++ " wasn't found\n")
+genBlock cx (Just block) name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
   where (ncx, s) = foldl (\(cx, acc) name ->
           let instruction = HashMap.lookup name $ LLIR.functionInstructions f
               (ncx, str) = genInstruction cx instruction in
@@ -181,15 +191,17 @@ genInstruction cx (Just (VAllocation result tp size)) =
       bytes = ((s + 1) * 8)
 
       -- in case of an array, skip first byte
-      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
-      first = if s > 0 then (show $ ((offset cx) + 8) * (-1)) ++ "(%rbp)" else destination
+      stackOffset = (offset cx) * (-1)
+      destination = (show stackOffset) ++ "(%rbp)"
+      firstOffset = if s > 0 then stackOffset - 8 else stackOffset
+      first = (show firstOffset) ++ "(%rbp)"
 
       ncx :: FxContext = case size of
         -- if array, store location of its length lookup at the head
-        Just i -> setVariableLoc cx (result ++ "@len") destination
+        Just i -> setVariableLoc cx (result ++ "@len") ("%rbp", stackOffset)
         Nothing -> cx
       in
-        (updateOffsetBy (setVariableLoc ncx result first) bytes,
+        (updateOffsetBy (setVariableLoc ncx result ("%rbp", firstOffset)) bytes,
          "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
          if s > 0 then ("  movq $" ++ (show s) ++ ", " ++ destination ++ "\n") else "")
 
@@ -198,8 +210,9 @@ genInstruction cx (Just (VUnOp result op val)) =
       instruction = case op of
         "-" -> "  negq %rax\n"
         "!" -> "  test %rax, %rax\n  setz %al\n"
-      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
-      ncx = updateOffset $ setVariableLoc cx result destination in
+      stackOffset = (offset cx) * (-1)
+      destination = (show stackOffset) ++ "(%rbp)"
+      ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
     (ncx, 
     "  movq " ++ loc ++ ", %rax\n" ++
     instruction ++
@@ -208,8 +221,9 @@ genInstruction cx (Just (VUnOp result op val)) =
 genInstruction cx (Just (VBinOp result op val1 val2)) =
     let loc1 = snd $ genAccess cx val1 
         loc2 = snd $ genAccess cx val2 
-        destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
-        ncx = updateOffset $ setVariableLoc cx result destination in
+        stackOffset = (offset cx) * (-1)
+        destination = (show stackOffset) ++ "(%rbp)"
+        ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
           (ncx,
           "  movq " ++ loc1 ++ ", %rax\n" ++
           genOp op loc2 ++
@@ -225,8 +239,9 @@ genInstruction cx (Just (VMethodCall name isName fname args)) =
                            (cx, []) args
       precall = getPreCall nargs
       postcall = getPostCall
-      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)" in
-        (updateOffset $ setVariableLoc ncx name destination, 
+      stackOffset = (offset cx) * (-1)
+      destination = (show stackOffset) ++ "(%rbp)" in
+        (updateOffset $ setVariableLoc ncx name ("%rbp", stackOffset),
          precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
 genInstruction cx (Just v@(VStore _ val var)) =
@@ -239,25 +254,50 @@ genInstruction cx (Just v@(VStore _ val var)) =
 
 genInstruction cx (Just (VLookup result val)) =
   let loc = snd $ genAccess cx val
-      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
-      ncx = updateOffset $ setVariableLoc cx result destination in
+      stackOffset = (offset cx) * (-1)
+      destination = (show stackOffset) ++ "(%rbp)"
+      ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
         (ncx,
         "  movq " ++ loc ++ ", %rax\n" ++
         "  movq %rax, " ++ destination ++ "\n")
 
-genInstruction cx (Just (VArrayStore _ _ _ _)) =
-  (cx, "TODO\n")
+genInstruction cx (Just (VArrayStore _ val arrayRef idxRef)) =
+  let arr = case arrayRef of
+              InstRef s -> lookupVariable cx s
+              GlobalRef s -> ".global_" ++ s
+              _ -> "bad array store " ++ (show arrayRef)
+      idx = snd $ genAccess cx idxRef
+      loc = snd $ genAccess cx val in
+  (cx,
+   "  leaq " ++ arr ++ ", %rax\n" ++
+   "  movq " ++ idx ++ ", %rbx\n" ++
+   "  leaq (%rax, %rbx, 8), %rbx\n" ++
+   "  movq " ++ loc ++ ", %rax\n" ++
+   "  movq %rax, (%rbx)\n")
 
-genInstruction cx (Just (VArrayLookup _ _ _)) =
-  (cx, "TODO\n")
+genInstruction cx (Just (VArrayLookup result arrayRef idxRef)) =
+  let arr = case arrayRef of
+              InstRef s -> lookupVariable cx s
+              GlobalRef s -> ".global_" ++ s
+              _ -> "bad array lookup " ++ (show arrayRef)
+      idx = snd $ genAccess cx idxRef
+      stackOffset = (offset cx) * (-1)
+      destination = (show stackOffset) ++ "(%rbp)"
+      ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
+  (ncx,
+   "  leaq " ++ arr ++ ", %rax\n" ++
+   "  movq " ++ idx ++ ", %rbx\n" ++
+   "  movq (%rax, %rbx, 8), %rbx\n" ++
+   "  movq %rbx, " ++ destination ++ "\n")
 
 genInstruction cx (Just (VArrayLen result ref)) =
      let access = case ref of
             InstRef s -> lookupVariable cx (s ++ "@len")
             GlobalRef s -> ".global_" ++ s
             _ -> "bad VArrayLen of " ++ (show ref)
-         destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
-         ncx = updateOffset $ setVariableLoc cx result destination in
+         stackOffset = (offset cx) * (-1)
+         destination = (show stackOffset) ++ "(%rbp)"
+         ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
    (ncx,
    "  movq " ++ access ++ ", %rax\n" ++
    "  movq %rax, " ++ destination ++ "\n")
@@ -277,7 +317,7 @@ genInstruction cx (Just (VCondBranch _ cond true false)) =
     "  jz " ++ name cx ++ "_" ++ false ++ "\n")
 
 genInstruction cx (Just (VUnreachable _)) =
-  (cx, "  BAD\n")
+  (cx, "  # unreachable instruction TODO?\n")
 
 genInstruction cx (Just (VUncondBranch _ dest)) =
   (cx, "  jmp " ++ name cx ++ "_" ++ dest ++ "\n")
@@ -341,9 +381,9 @@ gen mod =
       cx2 = addGlobals cx globals
       (cx3, fns) =
         foldl (\(cx, asm) fn ->
-                let (ncx, str) = genFunction cx2 fn in
+                let (ncx, str) = genFunction cx fn in
                   (ncx, asm ++ str)) 
-              (cx, "") fxs
+              (cx2, "") fxs
   in
     (genGlobals globals) ++
     getHeader ++
