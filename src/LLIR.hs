@@ -144,6 +144,10 @@ instance Value VInstruction where
     | op == ">"   =  TBool
     | op == ">="  =  TBool
     | op == "<="  =  TBool
+    | op == "u<"   =  TBool
+    | op == "u>"   =  TBool
+    | op == "u>="  =  TBool
+    | op == "u<="  =  TBool
     | op == "=="  =  TBool
     | op == "!="  =  TBool
     | op == "&"  =  TBool
@@ -399,6 +403,33 @@ createArrayLen array builder =
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
+createBoundedArrayLookup :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
+createBoundedArrayLookup array index ar1 =
+  let (len, ar2)      = createArrayLen array ar1
+      (inBounds, ar3) = createBinOp "u<=" index len ar2
+      (goodBlock,ar4) = createBlock "inbounds" ar3
+      (badBlock,ar5)  = createBlock "outbounds" ar4
+      (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
+      ar7             = setInsertionPoint badBlock ar6
+      ar8             = createExit 1 ar7
+      (_,ar9)         = createUnreachable ar8
+      ar10            = setInsertionPoint goodBlock ar9
+      in createArrayLookup array index ar10
+
+createBoundedArrayStore :: ValueRef -> ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
+createBoundedArrayStore toStore array index ar1 =
+  let (len, ar2)      = createArrayLen array ar1
+      (inBounds, ar3) = createBinOp "u<=" index len ar2
+      (goodBlock,ar4) = createBlock "inbounds" ar3
+      (badBlock,ar5)  = createBlock "outbounds" ar4
+      (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
+      ar7             = setInsertionPoint badBlock ar6
+      ar8             = createExit 1 ar7
+      (_,ar9)         = createUnreachable ar8
+      ar10            = setInsertionPoint goodBlock ar9
+      in createArrayStore toStore array index ar10
+
+
 createReturn :: Maybe ValueRef -> Builder -> (ValueRef, Builder)
 createReturn retValue builder =
   let pmod1 = pmod builder
@@ -414,6 +445,17 @@ createCondBranch cond trueBranch falseBranch builder =
       builder2 :: Builder = appendInstruction (VCondBranch name cond trueBranch falseBranch) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
+
+createUnreachable :: Builder -> (ValueRef, Builder)
+createUnreachable builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VUnreachable name) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createExit :: Int -> Builder -> Builder
+createExit eval build = snd $ createCalloutCall "exit" [ConstInt $ read $ show eval] build
 
 createUncondBranch :: String -> Builder -> (ValueRef, Builder)
 createUncondBranch branch builder =
