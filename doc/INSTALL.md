@@ -24,7 +24,7 @@ sudo apt-get update
 sudo apt-get install -y software-properties-common python-software-properties
 sudo add-apt-repository -y ppa:hvr/ghc
 sudo apt-get update
-sudo apt-get install -y cabal-install-1.22 ghc-7.10.2
+sudo apt-get install -y cabal-install-1.22 ghc-7.10.2 ghc-7.10.2-prof
 cat >> ~/.bashrc <<EOF
 export PATH="\$HOME/.cabal/bin:/opt/cabal/1.22/bin:/opt/ghc/7.10.2/bin:\$PATH"
 EOF
@@ -35,6 +35,14 @@ Update Cabal's sources:
 
 ```bash
 cabal update
+```
+
+Upgrade the versions of `alex` and `happy` because they are likely to be
+outdated in the default distribution.
+
+```bash
+cabal install alex
+cabal install happy
 ```
 
 Build the project:
