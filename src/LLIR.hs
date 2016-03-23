@@ -411,7 +411,7 @@ createBoundedArrayLookup array index ar1 =
       (badBlock,ar5)  = createBlock "outbounds" ar4
       (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
       ar7             = setInsertionPoint badBlock ar6
-      ar8             = createExit 1 ar7
+      ar8             = createExit (-1) ar7
       (_,ar9)         = createUnreachable ar8
       ar10            = setInsertionPoint goodBlock ar9
       in createArrayLookup array index ar10
@@ -424,7 +424,7 @@ createBoundedArrayStore toStore array index ar1 =
       (badBlock,ar5)  = createBlock "outbounds" ar4
       (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
       ar7             = setInsertionPoint badBlock ar6
-      ar8             = createExit 1 ar7
+      ar8             = createExit (-1) ar7
       (_,ar9)         = createUnreachable ar8
       ar10            = setInsertionPoint goodBlock ar9
       in createArrayStore toStore array index ar10

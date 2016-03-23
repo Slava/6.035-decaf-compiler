@@ -11,20 +11,31 @@ import LLIR
 data CGContext = CGContext {
   -- label, constant string
   constStrs :: [(String, String)],
-  nextConstStrId :: Int
-};
+  nextConstStrId :: Int,
+  -- global arrays with sizes
+  globalArrays :: [(String, Int)]
+}
 
 newCGContext :: CGContext
-newCGContext = CGContext [] 0
+newCGContext = CGContext [] 0 []
 
 getConstStrId :: FxContext -> String -> (FxContext, String)
-getConstStrId (FxContext name (CGContext strs next) table offset) str =
+getConstStrId (FxContext name (CGContext strs next globs) table offset) str =
   (FxContext name newGlobal table offset, id)
   where id = ".const_str" ++ (show next)
         newGlobal = CGContext{
           constStrs = strs ++ [(id, str)],
-          nextConstStrId = next + 1
+          nextConstStrId = next + 1,
+          globalArrays = globs
         }
+
+addGlobals (CGContext constStrs nextConstStrId globalArrays) globals =
+  let arrays = filter (\(_, (_, size)) -> case size of
+                          Just _ -> True
+                          Nothing -> False)
+        (HashMap.toList globals)
+      l = map (\(name, (_, Just size)) -> (".global_" ++ name, size)) arrays in
+  CGContext constStrs nextConstStrId l
 
 data FxContext = FxContext {
   name   :: String,
@@ -38,6 +49,9 @@ newFxContext name global = FxContext name global HashMap.empty 8
 
 updateOffset :: FxContext -> FxContext
 updateOffset (FxContext name global table offset) = FxContext name global table $ offset + 8
+
+updateOffsetBy :: FxContext -> Int -> FxContext
+updateOffsetBy (FxContext name global table offset) size = FxContext name global table $ offset + size
 
 lookupVariable :: FxContext -> String -> String
 lookupVariable (FxContext _ _ table _) var = 
@@ -97,16 +111,34 @@ genGlobal :: (String, (VType, Maybe Int)) -> String
 genGlobal (name, (_, Nothing)) =
     ".global_" ++ name ++ ":\n  .zero 8\n" -- Need to adjust for arrays
 genGlobal (name, (_, Just size)) =
-    ".global_" ++ name ++ ":\n  .zero " ++ show (8 * size) ++ "\n"
+    -- an extra 8-byte word for storing the length
+    ".global_" ++ name ++ ":\n  .zero " ++ show (8 * (1 + size)) ++ "\n"
 
 genCallouts :: HashMap.Map String String -> String
 genCallouts callouts =
     "" -- Not sure how to declare global strings
 
+closestMultipleOf16 num =
+  ((num + 15) `div` 16) * 16
+
+calculateLocalsSize instrs =
+  foldl (+) 0 (map (\instr -> case instr of
+                       VStore _ _ _ -> 0
+                       VArrayStore _ _ _ _ -> 0
+                       VReturn _ _ -> 0
+                       VCondBranch _ _ _ _ -> 0
+                       VUncondBranch _ _ -> 0
+                       VUnreachable _ -> 0
+                       VAllocation _ _ (Just x) -> (x + 1) * 8
+                       VAllocation _ _ Nothing -> 8
+                       _ -> 8
+                       ) instrs)
+
 genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
 genFunction cx f =
   let argsLength = length $ LLIR.arguments f
-      prolog = getProlog argsLength (16 * (length $ (LLIR.functionInstructions f)))
+      localsSize = calculateLocalsSize $ map snd $ HashMap.toList (LLIR.functionInstructions f)
+      prolog = getProlog argsLength (closestMultipleOf16 localsSize)
       ncx1 = foldl
                    (\cx (idx, arg) ->
                      setVariableLoc cx 
@@ -125,27 +157,41 @@ genFunction cx f =
 
 genBlock :: FxContext -> Maybe LLIR.VBlock -> LLIR.VFunction -> (FxContext, String)
 genBlock cx Nothing _ = (cx, "BAD\n")
-genBlock cx (Just block) f = (ncx, LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block ++ ":\n" ++ s)
+genBlock cx (Just block) f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
   where (ncx, s) = foldl (\(cx, acc) name ->
           let instruction = HashMap.lookup name $ LLIR.functionInstructions f
               (ncx, str) = genInstruction cx instruction in
                 (ncx, acc ++ str))
           (cx, "")
           (LLIR.blockInstructions block)
+        blockName = LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block
+        setupGlobals = if blockName /= "main_entry" then "" else genSetupGlobals (global cx)
+
+genSetupGlobals cx =
+  concat $ intersperse "\n" $ map (\(name, size) -> "  movq $" ++ (show size) ++ ", " ++ name) $ globalArrays cx
 
 genInstruction :: FxContext -> Maybe LLIR.VInstruction -> (FxContext, String)
-genInstruction cx Nothing = (cx, "BAD\n")
+genInstruction cx Nothing = (cx, "# empty instruction\n")
 
-genInstruction cx (Just (VAllocation result _ size)) =
+genInstruction cx (Just (VAllocation result tp size)) =
   let s = case size of
                  Just i -> i
                  Nothing -> 0
-      idx = case size of
-                 Just i -> i
-                 Nothing -> 1
-      destination = (show $ ((s * 8) + offset cx) * (-1)) ++ "(%rbp)"
+      -- reserve first 8-byte number to store the length of the array
+      bytes = ((s + 1) * 8)
+
+      -- in case of an array, skip first byte
+      destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
+      first = if s > 0 then (show $ ((offset cx) + 8) * (-1)) ++ "(%rbp)" else destination
+
+      ncx :: FxContext = case size of
+        -- if array, store location of its length lookup at the head
+        Just i -> setVariableLoc cx (result ++ "@len") destination
+        Nothing -> cx
       in
-        ((iterate updateOffset $ setVariableLoc cx result destination) !! idx, "")
+        (updateOffsetBy (setVariableLoc ncx result first) bytes,
+         "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
+         if s > 0 then ("  movq $" ++ (show s) ++ ", " ++ destination ++ "\n") else "")
 
 genInstruction cx (Just (VUnOp result op val)) =
   let loc = snd $ genAccess cx val 
@@ -205,8 +251,17 @@ genInstruction cx (Just (VArrayStore _ _ _ _)) =
 genInstruction cx (Just (VArrayLookup _ _ _)) =
   (cx, "TODO\n")
 
-genInstruction cx (Just (VArrayLen _ _)) =
-  (cx, "TODO\n")
+genInstruction cx (Just (VArrayLen result ref)) =
+     let access = case ref of
+            InstRef s -> lookupVariable cx (s ++ "@len")
+            GlobalRef s -> ".global_" ++ s
+            _ -> "bad VArrayLen of " ++ (show ref)
+         destination = (show $ (offset cx) * (-1)) ++ "(%rbp)"
+         ncx = updateOffset $ setVariableLoc cx result destination in
+   (ncx,
+   "  movq " ++ access ++ ", %rax\n" ++
+   "  movq %rax, " ++ destination ++ "\n")
+  
 
 genInstruction cx (Just (VReturn _ maybeRef)) =
   case maybeRef of
@@ -238,6 +293,10 @@ genOp "<"  loc = "  cmp "   ++ loc ++ ", %rax\n  setl %al\n"
 genOp "<=" loc = "  cmp "   ++ loc ++ ", %rax\n  setle %al\n"
 genOp ">" loc  = "  cmp "   ++ loc ++ ", %rax\n  setg %al\n"
 genOp ">=" loc = "  cmp "   ++ loc ++ ", %rax\n  setge %al\n"
+genOp "u<"  loc = "  cmp "   ++ loc ++ ", %rax\n  setl %al\n"
+genOp "u<=" loc = "  cmp "   ++ loc ++ ", %rax\n  setle %al\n"
+genOp "u>" loc  = "  cmp "   ++ loc ++ ", %rax\n  setg %al\n"
+genOp "u>=" loc = "  cmp "   ++ loc ++ ", %rax\n  setge %al\n"
 genOp "||" loc = "  or "    ++ loc ++ ", %rax\n  cmp %rax, $0\n  setnz %al\n"
 genOp "&&" loc = "  and "   ++ loc ++ ", %rax\n  cmp %rax, $0\n  setnz %al\n"
 
@@ -279,9 +338,10 @@ gen mod =
       callouts = LLIR.callouts mod
       fxs = HashMap.elems $ LLIR.functions mod
       cx = newCGContext
-      (cx2, fns) =
+      cx2 = addGlobals cx globals
+      (cx3, fns) =
         foldl (\(cx, asm) fn ->
-                let (ncx, str) = genFunction cx fn in
+                let (ncx, str) = genFunction cx2 fn in
                   (ncx, asm ++ str)) 
               (cx, "") fxs
   in
@@ -290,7 +350,7 @@ gen mod =
     (genCallouts callouts) ++
     fns ++
     "\n\n" ++
-    (genConstants cx2)
+    (genConstants cx3)
 
 pusha =
   "  push %rax\n" ++
