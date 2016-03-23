@@ -216,7 +216,11 @@ genInstruction cx (Just (VReturn _ maybeRef)) =
 
 genInstruction cx (Just (VCondBranch _ cond true false)) =
   let loc = snd $ genAccess cx cond in
-    (cx, "  movq " ++ loc ++ ", %rax\n  test %rax, %rax\n  jz " ++ name cx ++ "_" ++ false ++ "\n")
+    (cx, 
+    "  movq " ++ loc ++ ", %rax\n" ++
+    "  test %rax, %rax\n" ++
+    "  jnz " ++ name cx ++ "_" ++ true ++ "\n" ++
+    "  jz " ++ name cx ++ "_" ++ false ++ "\n")
 
 genInstruction cx (Just (VUnreachable _)) =
   (cx, "  BAD\n")
