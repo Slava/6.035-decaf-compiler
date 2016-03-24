@@ -30,6 +30,7 @@ getConstStrId (FxContext name (CGContext strs next globs) table offset) str =
         }
 
 addGlobals (CGContext constStrs nextConstStrId globalArrays) globals =
+  -- only collects sizes of global arrays so the beginning of main function can set the lengths.
   let arrays = filter (\(_, (_, size)) -> case size of
                           Just _ -> True
                           Nothing -> False)
@@ -317,7 +318,7 @@ genInstruction cx (Just (VCondBranch _ cond true false)) =
     "  jz " ++ name cx ++ "_" ++ false ++ "\n")
 
 genInstruction cx (Just (VUnreachable _)) =
-  (cx, "  # unreachable instruction TODO?\n")
+  (cx, "  # unreachable instruction\n")
 
 genInstruction cx (Just (VUncondBranch _ dest)) =
   (cx, "  jmp " ++ name cx ++ "_" ++ dest ++ "\n")
@@ -347,7 +348,6 @@ genArg cx x =
 
 genAccess :: FxContext -> ValueRef -> (FxContext, String)
 genAccess cx (InstRef ref) =
-  {-- TODO: look up global vars in the CGContext! --}
   (cx, lookupVariable cx ref)
   
 genAccess cx (ConstInt i) =
