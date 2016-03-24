@@ -400,7 +400,7 @@ gen mod =
     (genCallouts callouts) ++
     fns ++
     "\n\n" ++
-    (genConstants cx3)
+    (genConstants cx3) ++ "\n"
 
 pusha =
   "  push %rax\n" ++
