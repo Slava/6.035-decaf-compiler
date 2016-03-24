@@ -232,7 +232,7 @@ genInstruction cx (Just (VBinOp result op val1 val2)) =
           --"  old cx was: " ++ show (HashMap.toList $ variables cx) ++ ", new cx is: " ++ show (HashMap.toList $ variables ncx)
           )
 
-genInstruction cx (Just (VMethodCall name isName fname args)) =
+genInstruction cx (Just (VMethodCall name isCallout fname args)) =
   -- push arguments
   let (ncx, nargs) = foldl (\(cx, acc) arg ->
                               let (ncx, narg) = genArg cx arg in
@@ -241,9 +241,10 @@ genInstruction cx (Just (VMethodCall name isName fname args)) =
       precall = getPreCall nargs
       postcall = getPostCall
       stackOffset = (offset cx) * (-1)
-      destination = (show stackOffset) ++ "(%rbp)" in
-        (updateOffset $ setVariableLoc ncx name ("%rbp", stackOffset),
-         precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
+      destination = (show stackOffset) ++ "(%rbp)" 
+      (ncx2, exitMessage) = if fname == "exit" && isCallout then genExitMessage cx (args !! 0) else (ncx, "") in
+        (updateOffset $ setVariableLoc ncx2 name ("%rbp", stackOffset),
+         exitMessage ++ precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
 genInstruction cx (Just v@(VStore _ val var)) =
   let loc1 = snd $ genAccess cx val
@@ -272,6 +273,7 @@ genInstruction cx (Just (VArrayStore _ val arrayRef idxRef)) =
   (cx,
    "  leaq " ++ arr ++ ", %rax\n" ++
    "  movq " ++ idx ++ ", %rbx\n" ++
+   "  addq $1, %rbx\n" ++
    "  leaq (%rax, %rbx, 8), %rbx\n" ++
    "  movq " ++ loc ++ ", %rax\n" ++
    "  movq %rax, (%rbx)\n")
@@ -288,6 +290,7 @@ genInstruction cx (Just (VArrayLookup result arrayRef idxRef)) =
   (ncx,
    "  leaq " ++ arr ++ ", %rax\n" ++
    "  movq " ++ idx ++ ", %rbx\n" ++
+   "  addq $1, %rbx\n" ++
    "  movq (%rax, %rbx, 8), %rbx\n" ++
    "  movq %rbx, " ++ destination ++ "\n")
 
@@ -323,6 +326,12 @@ genInstruction cx (Just (VUnreachable _)) =
 genInstruction cx (Just (VUncondBranch _ dest)) =
   (cx, "  jmp " ++ name cx ++ "_" ++ dest ++ "\n")
 
+genExitMessage :: FxContext -> ValueRef -> (FxContext, String)
+genExitMessage cx val = (ncx, "  movq $" ++ message ++ ", %rdi\n" ++ "  call printf\n")
+  where (ncx, message) = case val of
+                            LLIR.ConstInt (-1) -> getConstStrId cx "\"ERROR: Array access out of bounds\\n\""
+                            LLIR.ConstInt (-2) -> getConstStrId cx "\"ERROR: Function did not return\\n\""
+        
 genOp :: String -> String -> String
 genOp "+" loc  = "  addq "  ++ loc ++ ", %rax\n"
 genOp "-" loc  = "  subq "  ++ loc ++ ", %rax\n"
