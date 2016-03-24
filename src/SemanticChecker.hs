@@ -433,7 +433,7 @@ semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
       ty2 = getType ar4 v2
       ty3 = getType ar4 tv3
       ty4 = getType ar4 tv4
-      ar5 = combineCx2 ar4 (ty2 == LLIR.TBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
+      ar5 = combineCx2 ar2 (ty2 == LLIR.TBool) $ printf "Type of conditional in ternary incorrect -- expected %s, received %s\n" (show DBool) (show ty2)
       ar6 = combineCx2 ar5 (ty3 == ty4)  $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4)
       (block1, ar7) = addInstruction2 ar6 $ LLIR.createBlock "condTrue"
       (block2, ar8) = addInstruction2 ar7 $ LLIR.createBlock "condFalse"
