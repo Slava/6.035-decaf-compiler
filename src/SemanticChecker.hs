@@ -356,7 +356,7 @@ semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
           (_, ar3, v3) = semanticVerifyExpression rexpr m ar2
           ty2 = getType ar3 v2
           ty3 = getType ar3 v3
-          cx1 = combineCx2 ar3 (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
+          cx1 = combineCx2 ar (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
           cx2 = combineCx2 cx1 (ty3 == LLIR.TBool) $ printf "Incorrect type of right operand for op %s: %s; Expected: boolean\n" op (show ty3)
           in semanticVerifyExpression (CondExpression lexpr rexpr (LiteralExpression $ BoolLiteral False)) m cx2
     "||" ->
@@ -364,7 +364,7 @@ semanticVerifyExpression (BinOpExpression (op, lexpr, rexpr)) m ar =
           (_, ar3, v3) = semanticVerifyExpression rexpr m ar2
           ty2 = getType ar3 v2
           ty3 = getType ar3 v3
-          cx1 = combineCx2 ar3 (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
+          cx1 = combineCx2 ar (ty2 == LLIR.TBool) $ printf "Incorrect type of left operand for op %s: %s; Expected: boolean\n" op (show ty2)
           cx2 = combineCx2 cx1 (ty3 == LLIR.TBool) $ printf "Incorrect type of right operand for op %s: %s; Expected: boolean\n" op (show ty3)
           in semanticVerifyExpression (CondExpression lexpr (LiteralExpression $ BoolLiteral True) rexpr) m cx2
     _    ->
