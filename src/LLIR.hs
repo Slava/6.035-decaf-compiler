@@ -406,7 +406,7 @@ createArrayLen array builder =
 createBoundedArrayLookup :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
 createBoundedArrayLookup array index ar1 =
   let (len, ar2)      = createArrayLen array ar1
-      (inBounds, ar3) = createBinOp "u<=" index len ar2
+      (inBounds, ar3) = createBinOp "u<" index len ar2
       (goodBlock,ar4) = createBlock "inbounds" ar3
       (badBlock,ar5)  = createBlock "outbounds" ar4
       (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
@@ -419,7 +419,7 @@ createBoundedArrayLookup array index ar1 =
 createBoundedArrayStore :: ValueRef -> ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
 createBoundedArrayStore toStore array index ar1 =
   let (len, ar2)      = createArrayLen array ar1
-      (inBounds, ar3) = createBinOp "u<=" index len ar2
+      (inBounds, ar3) = createBinOp "u<" index len ar2
       (goodBlock,ar4) = createBlock "inbounds" ar3
       (badBlock,ar5)  = createBlock "outbounds" ar4
       (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
