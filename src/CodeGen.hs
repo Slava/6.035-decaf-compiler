@@ -92,10 +92,10 @@ getPreCall args =
   pushedArgs ++
   "  #/precall\n"
 
-getPostCall :: String
-getPostCall =
+getPostCall :: Int -> String
+getPostCall numArguments =
   "  #postcall\n" ++
-  -- TODO: pop arguments
+  (intercalate "" $ replicate (numArguments - 6) "  pop %rax\n") ++
   popa ++
   "  #/postcall\n"
 
@@ -211,7 +211,7 @@ genInstruction cx (Just (VUnOp result op val)) =
   let loc = snd $ genAccess cx val 
       instruction = case op of
         "-" -> "  negq %rax\n"
-        "!" -> "  test %rax, %rax\n  setz %al\n"
+        "!" -> "  testq %rax, %rax\n  movq $0, %rax\n  setz %al\n"
       stackOffset = (offset cx) * (-1)
       destination = (show stackOffset) ++ "(%rbp)"
       ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
@@ -240,7 +240,7 @@ genInstruction cx (Just (VMethodCall name isCallout fname args)) =
                                     (ncx, acc ++ [narg]))
                            (cx, []) args
       precall = getPreCall nargs
-      postcall = getPostCall
+      postcall = getPostCall $ length args
       stackOffset = (offset cx) * (-1)
       destination = (show stackOffset) ++ "(%rbp)" 
       (ncx2, exitMessage) = if fname == "exit" && isCallout then genExitMessage cx (args !! 0) else (ncx, "") in
@@ -317,7 +317,7 @@ genInstruction cx (Just (VCondBranch _ cond true false)) =
   let loc = snd $ genAccess cx cond in
     (cx, 
     "  movq " ++ loc ++ ", %rax\n" ++
-    "  test %rax, %rax\n" ++
+    "  testq %rax, %rax\n" ++
     "  jnz " ++ name cx ++ "_" ++ true ++ "\n" ++
     "  jz " ++ name cx ++ "_" ++ false ++ "\n")
 
@@ -338,18 +338,18 @@ genOp "+" loc  = "  addq "  ++ loc ++ ", %rax\n"
 genOp "-" loc  = "  subq "  ++ loc ++ ", %rax\n"
 genOp "*" loc  = "  imulq " ++ loc ++ ", %rax\n"
 genOp "/" loc  = "  idivq " ++ loc ++ "\n"
-genOp "==" loc = "  cmp "   ++ loc ++ ", %rax\n  setz %al\n"
-genOp "!=" loc = "  cmp "   ++ loc ++ ", %rax\n  setnz %al\n"
-genOp "<"  loc = "  cmp "   ++ loc ++ ", %rax\n  setl %al\n"
-genOp "<=" loc = "  cmp "   ++ loc ++ ", %rax\n  setle %al\n"
-genOp ">" loc  = "  cmp "   ++ loc ++ ", %rax\n  setg %al\n"
-genOp ">=" loc = "  cmp "   ++ loc ++ ", %rax\n  setge %al\n"
-genOp "u<"  loc = "  cmp "   ++ loc ++ ", %rax\n  setl %al\n"
-genOp "u<=" loc = "  cmp "   ++ loc ++ ", %rax\n  setle %al\n"
-genOp "u>" loc  = "  cmp "   ++ loc ++ ", %rax\n  setg %al\n"
-genOp "u>=" loc = "  cmp "   ++ loc ++ ", %rax\n  setge %al\n"
-genOp "||" loc = "  or "    ++ loc ++ ", %rax\n  cmp %rax, $0\n  setnz %al\n"
-genOp "&&" loc = "  and "   ++ loc ++ ", %rax\n  cmp %rax, $0\n  setnz %al\n"
+genOp "==" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setz %al\n"
+genOp "!=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setnz %al\n"
+genOp "<"  loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setl %al\n"
+genOp "<=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setle %al\n"
+genOp ">" loc  = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setg %al\n"
+genOp ">=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setge %al\n"
+genOp "u<"  loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setl %al\n"
+genOp "u<=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setle %al\n"
+genOp "u>" loc  = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setg %al\n"
+genOp "u>=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setge %al\n"
+genOp "||" loc = "  orq "    ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
+genOp "&&" loc = "  andq "   ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
 
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
 genArg cx x =
