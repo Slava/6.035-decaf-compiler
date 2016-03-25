@@ -352,8 +352,8 @@ genOp "u<"  loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setl %al\n"
 genOp "u<=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setle %al\n"
 genOp "u>" loc  = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setg %al\n"
 genOp "u>=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setge %al\n"
-genOp "||" loc = "  orq "    ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
-genOp "&&" loc = "  andq "   ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
+genOp "|" loc = "  orq "    ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
+genOp "&" loc = "  andq "   ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
 
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
 genArg cx x =

@@ -24,6 +24,19 @@ data VType            = TInt
                       | TPointer VType
                       deriving (Eq, Show);
 
+{- in bytes -}
+typeSize :: VType -> Int
+typeSize op = case op of
+  TInt       -> 8
+  TBool      -> 8 -- todo fix to 1
+  TString    -> 8 -- ptr
+  TPointer _ -> 8 -- ptr
+  TFunction _ _ -> 8 -- ptr
+  TVoid      -> 0 -- ptr
+  TCallout   -> 8 -- ptr
+  TArray x   -> 8 -- ptr
+
+
 getDerivedType :: VType -> Maybe VType
 getDerivedType a =
   case a of
@@ -362,6 +375,28 @@ createAlloca op operand1 builder =
       builder3 = builder2--addDebug builder2 $ printf "creating alloca inst ctx:%s %s\n%s\n\n" (show $ location builder2 ) name (show $ pmod builder2)
       ref :: ValueRef = InstRef name in
       (ref, builder3)
+
+maybeIntToInt :: Maybe Int -> Int
+maybeIntToInt val = case val of
+  Nothing -> 0
+  Just v  -> v
+
+zeroMemory :: (ValueRef, Builder) -> Maybe Int-> Builder
+zeroMemory (mem,builder) val = 
+  let typ = getDerivedTypeN $ getType builder mem
+      in case typ of
+         TInt   -> snd $ createStore (ConstInt  0) mem builder
+         TBool  -> snd $ createStore (ConstBool False) mem builder
+         TArray x -> snd $ createCalloutCall "bzero" [mem, ConstInt $ toInteger $ (maybeIntToInt val)*(typeSize x)] builder
+         TVoid  -> builder
+         x -> addDebug builder $ printf "wtf %s\n" (show x)
+
+
+createZeroAlloca :: VType -> Maybe Int -> Builder -> (ValueRef, Builder)
+createZeroAlloca op len builder0 =
+  let (ref, builder) = createAlloca op len builder0
+      builder2 = zeroMemory (ref, builder) len 
+      in (ref, builder2)
 
 createStore :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
 createStore toStore loc builder =

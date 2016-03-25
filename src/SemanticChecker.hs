@@ -182,7 +182,7 @@ semanticVerifyDeclaration (Fields (stype, fields) ) m ar =
           let ar2 = case size of
                  Just sz -> combineCx2 ar (sz > 0) $ printf "Array size must be greater than 0\n"
                  Nothing -> ar
-              addFunc = if (scopeType m)==Other then LLIR.createGlobal name else LLIR.createAlloca
+              addFunc = if (scopeType m)==Other then LLIR.createGlobal name else LLIR.createZeroAlloca
               (val, ar3) = addInstruction2 ar2 $ addFunc (typeToVType typ) size
               (m2, success) = addToModule m val name
               ar4 = combineCx2 ar3 success ( printf "Could not redefine variable %s\n" name )
