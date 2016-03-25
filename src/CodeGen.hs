@@ -350,7 +350,7 @@ genInstruction cx (Just (VZeroInstr _ ref size)) =
   "  # /bzero\n")
 
 genExitMessage :: FxContext -> ValueRef -> (FxContext, String)
-genExitMessage cx val = (ncx, "  movq $" ++ message ++ ", %rdi\n" ++ "  call printf\n")
+genExitMessage cx val = (ncx, "  xorq %rax, %rax\n  movq $" ++ message ++ ", %rdi\n" ++ "  call printf\n")
   where (ncx, message) = case val of
                             LLIR.ConstInt (-1) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Array out of Bounds access in method \\\"" ++ name cx ++ "\\\"\\n\"")
                             LLIR.ConstInt (-2) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Method \\\"" ++ name cx ++ "\\\" didn't return\\n\"")
