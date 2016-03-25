@@ -104,7 +104,10 @@ getProlog argsLength localsSize =
   let argRegs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"] in
   "  #prolog\n" ++
   "  enter $" ++ (show (argsLength * 16 + localsSize)) ++ ", $0\n" ++
+  -- put register arguments to stack
   unwords (map (\(x, y) -> "  movq " ++ x ++ ", -" ++ (show $ 8 * y) ++ "(%rbp)\n") $ zip argRegs [1..argsLength]) ++
+  -- put stack arguments to stack (again, but after the reg args for easy access)
+  unwords (map (\(revIdx, argIdx) -> "  movq " ++ (show $ (revIdx + 1) * 8) ++ "(%rbp), %rax\n  movq %rax, -" ++ (show $ 8 * argIdx) ++ "(%rbp)\n") $ zip [1..argsLength] (drop 6 [1..argsLength])) ++
   "  #prolog\n"
 
 getEpilog :: String
