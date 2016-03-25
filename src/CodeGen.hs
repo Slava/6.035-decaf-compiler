@@ -274,29 +274,37 @@ genInstruction cx (Just (VArrayStore _ val arrayRef idxRef)) =
               InstRef s -> lookupVariable cx s
               GlobalRef s -> ".global_" ++ s
               _ -> "bad array store " ++ (show arrayRef)
+      isGlobal = case arrayRef of
+        GlobalRef _ -> True
+        _ -> False
       idx = snd $ genAccess cx idxRef
       loc = snd $ genAccess cx val in
   (cx,
-   "  leaq " ++ arr ++ ", %rax\n" ++
-   "  movq " ++ idx ++ ", %rbx\n" ++
-   "  leaq (%rax, %rbx, 8), %rbx\n" ++
-   "  movq " ++ loc ++ ", %rax\n" ++
-   "  movq %rax, (%rbx)\n")
+  "  leaq " ++ arr ++ ", %rax\n" ++
+  "  movq " ++ idx ++ ", %rbx\n" ++
+  (if isGlobal then "  addq $1, %rbx\n" else "") ++
+  "  leaq (%rax, %rbx, 8), %rbx\n" ++
+  "  movq " ++ loc ++ ", %rax\n" ++
+  "  movq %rax, (%rbx)\n")
 
 genInstruction cx (Just (VArrayLookup result arrayRef idxRef)) =
   let arr = case arrayRef of
               InstRef s -> lookupVariable cx s
               GlobalRef s -> ".global_" ++ s
               _ -> "bad array lookup " ++ (show arrayRef)
+      isGlobal = case arrayRef of
+        GlobalRef _ -> True
+        _ -> False
       idx = snd $ genAccess cx idxRef
       stackOffset = (offset cx) * (-1)
       destination = (show stackOffset) ++ "(%rbp)"
       ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
   (ncx,
-   "  leaq " ++ arr ++ ", %rax\n" ++
-   "  movq " ++ idx ++ ", %rbx\n" ++
-   "  movq (%rax, %rbx, 8), %rbx\n" ++
-   "  movq %rbx, " ++ destination ++ "\n")
+  "  leaq " ++ arr ++ ", %rax\n" ++
+  "  movq " ++ idx ++ ", %rbx\n" ++
+  (if isGlobal then "  addq $1, %rbx\n" else "") ++
+  "  movq (%rax, %rbx, 8), %rbx\n" ++
+  "  movq %rbx, " ++ destination ++ "\n")
 
 genInstruction cx (Just (VArrayLen result ref)) =
      let access = case ref of
@@ -336,7 +344,7 @@ genInstruction cx (Just (VZeroInstr _ ref size)) =
   "  # bzero\n" ++
   "  cld\n" ++
   "  leaq " ++ dest ++ ", %rdi\n" ++
-  "  movq $" ++ (show size) ++ ", %rcx\n" ++
+  "  movq $" ++ (show (size `div` 8)) ++ ", %rcx\n" ++
   "  movq $0, %rax\n" ++
   "  rep stosq\n" ++
   "  # /bzero\n")
