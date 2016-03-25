@@ -125,6 +125,7 @@ data VInstruction = VUnOp {- name -} String {- operand -} String {- argument nam
                   | VUnreachable String
                   | VUncondBranch String String
                   | VMethodCall String {- is-callout? -} Bool {- fname -} String {- args -} [ValueRef]
+                  | VZeroInstr String {- ref to zero -} ValueRef {- size in bytes -} Int
   deriving (Eq, Show);
 
 instance Namable VInstruction where
@@ -141,6 +142,7 @@ instance Namable VInstruction where
   getName (VUncondBranch name _) = name
   getName (VMethodCall name _ _ _) = name
   getName (VUnreachable name ) = name
+  getName (VZeroInstr name _ _) = name
 
 
 instance Value VInstruction where
@@ -166,6 +168,7 @@ instance Value VInstruction where
     | op == "&"  =  TBool
     | op == "|"  =  TBool
   getType _ (VUnreachable _) = TVoid
+  getType _ (VZeroInstr _ _ _) = TVoid
   getType _ (VStore _ toStore _) = TVoid
   getType b (VLookup _ toLookup) =
     case getDerivedType $ getType b toLookup of
@@ -390,7 +393,7 @@ zeroMemory (mem,builder) typ val =
          TBool  -> snd $ createStore (ConstBool False) mem builder
          TVoid  -> builder
          x -> addDebug builder $ printf "wtf %s\n" (show x)
-    Just rval -> snd $ createCalloutCall "bzero" [mem, ConstInt $ toInteger $ rval*(typeSize typ)] builder
+    Just rval -> snd $ createZeroInstr mem (rval*(typeSize typ)) builder
 
 
 createZeroAlloca :: VType -> Maybe Int -> Builder -> (ValueRef, Builder)
@@ -514,6 +517,14 @@ createCalloutCall fname args builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
       builder2 :: Builder = appendInstruction (VMethodCall name True fname args) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+createZeroInstr :: ValueRef -> Int -> Builder -> (ValueRef, Builder)
+createZeroInstr arg size builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VZeroInstr name arg size) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 

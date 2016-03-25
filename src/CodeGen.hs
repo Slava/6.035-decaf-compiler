@@ -167,7 +167,7 @@ genFunction cx f =
                          (ncx, str) = genBlock cx block name f in
                      (ncx, s ++ str))
                    (ncx1, "") $ LLIR.blockOrder f
-      strRes = LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
+      strRes = "\n" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
     (global ncx2, strRes)
 
 genBlock :: FxContext -> Maybe LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
@@ -198,15 +198,16 @@ genInstruction cx (Just (VAllocation result tp size)) =
       -- in case of an array, skip first byte
       stackOffset = (offset cx) * (-1)
       destination = (show stackOffset) ++ "(%rbp)"
-      firstOffset = if s > 0 then stackOffset - 8 else stackOffset
+      firstOffset = if s > 0 then stackOffset - (bytes - 8) else stackOffset
       first = (show firstOffset) ++ "(%rbp)"
 
       ncx :: FxContext = case size of
         -- if array, store location of its length lookup at the head
         Just i -> setVariableLoc cx (result ++ "@len") ("%rbp", stackOffset)
         Nothing -> cx
+      ncx2 = setVariableLoc ncx result ("%rbp", firstOffset)
       in
-        (updateOffsetBy (setVariableLoc ncx result ("%rbp", firstOffset)) bytes,
+        (updateOffsetBy ncx2 bytes,
          "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
          if s > 0 then ("  movq $" ++ (show s) ++ ", " ++ destination ++ "\n") else "")
 
@@ -278,7 +279,6 @@ genInstruction cx (Just (VArrayStore _ val arrayRef idxRef)) =
   (cx,
    "  leaq " ++ arr ++ ", %rax\n" ++
    "  movq " ++ idx ++ ", %rbx\n" ++
-   "  addq $1, %rbx\n" ++
    "  leaq (%rax, %rbx, 8), %rbx\n" ++
    "  movq " ++ loc ++ ", %rax\n" ++
    "  movq %rax, (%rbx)\n")
@@ -295,7 +295,6 @@ genInstruction cx (Just (VArrayLookup result arrayRef idxRef)) =
   (ncx,
    "  leaq " ++ arr ++ ", %rax\n" ++
    "  movq " ++ idx ++ ", %rbx\n" ++
-   "  addq $1, %rbx\n" ++
    "  movq (%rax, %rbx, 8), %rbx\n" ++
    "  movq %rbx, " ++ destination ++ "\n")
 
@@ -330,6 +329,17 @@ genInstruction cx (Just (VUnreachable _)) =
 
 genInstruction cx (Just (VUncondBranch _ dest)) =
   (cx, "  jmp " ++ name cx ++ "_" ++ dest ++ "\n")
+
+genInstruction cx (Just (VZeroInstr _ ref size)) =
+  let dest = snd $ genAccess cx ref in
+  (cx,
+  "  # bzero\n" ++
+  "  cld\n" ++
+  "  leaq " ++ dest ++ ", %rdi\n" ++
+  "  movq $" ++ (show size) ++ ", %rcx\n" ++
+  "  movq $0, %rax\n" ++
+  "  rep stosq\n" ++
+  "  # /bzero\n")
 
 genExitMessage :: FxContext -> ValueRef -> (FxContext, String)
 genExitMessage cx val = (ncx, "  movq $" ++ message ++ ", %rdi\n" ++ "  call printf\n")
