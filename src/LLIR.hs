@@ -381,21 +381,22 @@ maybeIntToInt val = case val of
   Nothing -> 0
   Just v  -> v
 
-zeroMemory :: (ValueRef, Builder) -> Maybe Int-> Builder
-zeroMemory (mem,builder) val = 
-  let typ = getDerivedTypeN $ getType builder mem
-      in case typ of
+zeroMemory :: (ValueRef, Builder) -> VType -> Maybe Int-> Builder
+zeroMemory (mem,builder) typ val = 
+  case val of
+    Nothing ->  
+      case typ of
          TInt   -> snd $ createStore (ConstInt  0) mem builder
          TBool  -> snd $ createStore (ConstBool False) mem builder
-         TArray x -> snd $ createCalloutCall "bzero" [mem, ConstInt $ toInteger $ (maybeIntToInt val)*(typeSize x)] builder
          TVoid  -> builder
          x -> addDebug builder $ printf "wtf %s\n" (show x)
+    Just rval -> snd $ createCalloutCall "bzero" [mem, ConstInt $ toInteger $ rval*(typeSize typ)] builder
 
 
 createZeroAlloca :: VType -> Maybe Int -> Builder -> (ValueRef, Builder)
 createZeroAlloca op len builder0 =
   let (ref, builder) = createAlloca op len builder0
-      builder2 = zeroMemory (ref, builder) len 
+      builder2 = zeroMemory (ref, builder) op len 
       in (ref, builder2)
 
 createStore :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
