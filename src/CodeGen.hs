@@ -330,8 +330,8 @@ genInstruction cx (Just (VUncondBranch _ dest)) =
 genExitMessage :: FxContext -> ValueRef -> (FxContext, String)
 genExitMessage cx val = (ncx, "  movq $" ++ message ++ ", %rdi\n" ++ "  call printf\n")
   where (ncx, message) = case val of
-                            LLIR.ConstInt (-1) -> getConstStrId cx "\"ERROR: Array access out of bounds\\n\""
-                            LLIR.ConstInt (-2) -> getConstStrId cx "\"ERROR: Function did not return\\n\""
+                            LLIR.ConstInt (-1) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Array out of Bounds access in method \\\"" ++ name cx ++ "\\\"\\n\"")
+                            LLIR.ConstInt (-2) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Method \\\"" ++ name cx ++ "\\\" didn't return\\n\"")
         
 genOp :: String -> String -> String
 genOp "+" loc  = "  addq "  ++ loc ++ ", %rax\n"
