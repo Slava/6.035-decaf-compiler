@@ -85,7 +85,7 @@ getPreCall args =
   let argRegs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
       remainingArgs = drop (length argRegs) args
       argsInRegisters = (foldl (\acc (arg, reg) -> acc ++ "  movq " ++  (fst arg) ++ ", " ++ reg ++ "\n") "" (zip args argRegs))
-      pushedArgs = (foldl (\acc arg -> acc ++ "  push " ++ (fst arg) ++ "\n") "" (reverse remainingArgs)) in
+      pushedArgs = (foldl (\acc arg -> acc ++ "  pushq " ++ (fst arg) ++ "\n") "" (reverse remainingArgs)) in
   "  #precall\n" ++
   pusha ++
   argsInRegisters ++
@@ -114,7 +114,7 @@ getEpilog :: String
 getEpilog =
   " \n" ++
   "  #epilog\n" ++
-  "  leave\n" ++
+  "  leaveq\n" ++
   "  ret\n" ++
   "  #/epilog\n"
 
@@ -243,12 +243,13 @@ genInstruction cx (Just (VMethodCall name isCallout fname args)) =
                                     (ncx, acc ++ [narg]))
                            (cx, []) args
       precall = getPreCall nargs
+      cleanRax = "  movq $0, %rax\n"
       postcall = getPostCall $ length args
       stackOffset = (offset cx) * (-1)
       destination = (show stackOffset) ++ "(%rbp)" 
       (ncx2, exitMessage) = if fname == "exit" && isCallout then genExitMessage cx (args !! 0) else (ncx, "") in
         (updateOffset $ setVariableLoc ncx2 name ("%rbp", stackOffset),
-         exitMessage ++ precall ++ "  call " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
+         exitMessage ++ precall ++ cleanRax ++ "  callq " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
 genInstruction cx (Just v@(VStore _ val var)) =
   let loc1 = snd $ genAccess cx val
