@@ -32,13 +32,15 @@ Daniel Shaar (\texttt{dshaar@mit.edu})}
 
 \section{Clarifications and Assumptions}
 
-\par As of right now, the error messages reported during parsing, semantic checking and run-time are not in the best shape. While they give a lot of information on the error, it is hard to locate which part of the program caused it as no line-numbers are reported.
+\par As of right now, the error messages reported during semantic checking and run-time are not in the best shape. While they give a lot of information on the error, it is hard to locate which part of the program caused it as no line-numbers are reported.
 
-\par In the assembly generation, some assumptions were made about integer division and mod operations. Mod always rounds down closer to zero (like in C++ but not in Python). Division by zero throws the OS "floating point exception".
+\par In the assembly generation, some assumptions were made about integer division and mod operations. Division always rounds down closer to zero (like in C++ but not in Python). Mod preserves the sign of mod operation (so $-7 \pmod 2 = -1$ while $7 \pmod 2 = 1$). Division and Mod by zero throws the OS "floating point exception".
 
 \section{Design Overview}
 
 \subsection{Semantic Checker}
+
+\par The semantic checks are performed during the conversion of the AST to the LLIR. As the AST is traversed (starting from the {\it Program}), the scope of each item is stored in a {\it Module} data structure. This represents a high level conversion from the AST to a High Level IR / Symbol Table. As we add appropriate {\it Modules} to the HLIR at each level of the AST and convert it to the LLIR, we recursively call functions of the form {\it semanticVerifyXXXXX} that will perform all checks pertaining to the level below and construct the LLIR in the process.
 
 \subsection{LLIR Design}
 
@@ -78,11 +80,11 @@ Pseudo-asm:
 2:   entry:
 3:       c = call rand();
 4:           br cond c ifTrue ifFalse
-5:    
+5:
 6:   ifTrue:
 7:       call printf "Random"
 8:       br ifFalse
-9:    
+9:
 10:   ifFalse:
 11:       call printf "Hello World\n"
 \end{verbbox}
@@ -109,6 +111,8 @@ Pseudo-asm:
 \par Right now, the generated code always pushes all caller saved registers before a function call but we decided not to bother with the callee-saved registers for now since we don't allocate registers anyway.
 
 \subsection{Alternatives}
+
+\par In terms of high level ideas, using SSA will help make optimization easier for the future. This is the most significant design decision made for this phase of the project. We could have chosen not to do this simplification now at the cost of further difficulty later.
 
 \par For the memory layout, we could try to implement different memory size for booleans (1 byte) vs integers (8 bytes). This would save the memory allocated, but won't improve the performance in any significant way in the context of this class. (However, one could argue that you would be able to fit more stack variables into L1 cache).
 
