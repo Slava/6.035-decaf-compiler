@@ -1,0 +1,135 @@
+\documentclass[11pt]{article}
+\usepackage[charter]{mathdesign}
+\usepackage{amsmath, verbatimbox}
+
+\title{6.035 Documentation: \\ \emph{Semantic Checker and Code Generation}}
+\author{Tony Cao (\texttt{tonycao@mit.edu}) \\
+Slava Kim (\texttt{slv@mit.edu}) \\
+William Moses (\texttt{wmoses@mit.edu}) \\
+Daniel Shaar (\texttt{dshaar@mit.edu})}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Division of Labor}
+
+\par The entire group contributed towards writing sematic checks. Daniel Shaar and William Moses were primarily responsible for creating the Low Level IR (LLIR), which consists of two files:
+
+\begin{itemize}
+    \item LLIR.hs - a framework for creating the LLIR with constructors and type declarations.
+    \item SemanticChecker.hs - constructs the LLIR from the AST, and performs the semantic checks during the construction.
+\end{itemize}
+
+\par Slava and Tony were primarily responsible for creating the code generation, which converted the mentioned LLIR to assembly. This consisted of one file:
+
+\begin{itemize}
+    \item CodeGen.hs - goes through LLIR and concatenates strings of assembly code for each instruction to generate assembly file.
+\end{itemize}
+
+\par The entire group also helped create additional tests and debug errors in all the mentioned components.
+
+\section{Clarifications and Assumptions}
+
+\par As of right now, the error messages reported during parsing, semantic checking and run-time are not in the best shape. While they give a lot of information on the error, it is hard to locate which part of the program caused it as no line-numbers are reported.
+
+\par In the assembly generation, some assumptions were made about integer division and mod operations. Mod always rounds down closer to zero (like in C++ but not in Python). Division by zero throws the OS "floating point exception".
+
+\section{Design Overview}
+
+\subsection{Semantic Checker}
+
+\subsection{LLIR Design}
+
+\par Our LLIR is an SSA IR loosely-based off of LLVM. In LLIR.hs, we define our LLIR to consist of some number of fundamental data structures. The lowest level of these is a value type {\it ValueRef}, which represents something that can be used in an instruction (constant, result of instruction, function, etc.). We also have an instruction type {\it VInstruction}, which represents a computation that roughly maps to an assembly instruction. Our instruction set consists of:
+
+\begin{itemize}
+    \item Unary Operation
+    \item Binary Operation
+    \item Store
+    \item Load
+    \item Stack Allocation
+    \item Array Store
+    \item Array Load
+    \item Array Length
+    \item Return
+    \item Conditional Branch
+    \item Unconditional Branch
+    \item Method Call
+\end{itemize}
+
+\subsubsection{Control Flow}
+
+\par We organize our instructions inside of basic blocks - a sequence of instructions that either all execute or all do not execute. i.e. No branches. From here we can construct the complexities of control flow by constructing various structures around basic blocks. An if statement might look like (pseudo-decaf, pseudo-asm):
+
+\begin{verbbox}
+Pseudo-decaf:
+1:
+2:   if (randBool()) {
+3:       printf("Random");
+4:   }
+5:   printf("Hello World\n");
+
+-----------------------------
+
+Pseudo-asm:
+1:
+2:   entry:
+3:       c = call rand();
+4:           br cond c ifTrue ifFalse
+5:    
+6:   ifTrue:
+7:       call printf "Random"
+8:       br ifFalse
+9:    
+10:   ifFalse:
+11:       call printf "Hello World\n"
+\end{verbbox}
+\begin{center}\theverbbox\end{center}
+
+\subsection{Code Generation Design}
+
+\par Our code generation takes the final PModule from the LLIR and traverses over all the globals, callouts, and instructions in each VFunction and VBlock, generating assembly instructions for each VInstruction. Thus, our code generation does not have any non-instruction specific knowledge besides the location of other variables when it generates the assembly for a given instruction.
+
+\subsubsection{Memory Layout}
+
+\par To start simple, we used 64-bit words for all data types (integers and booleans). This simplifies the memory layout and reduces the complexity.
+
+\par The arrays are always stored with an additional 64-bit word in front reserved for the length. All arrays grow to the positive direction of the memory addresses (the opposite direction of stack). Storing the length of the array in a word before the array saves us from the complexity of dealing with the null-terminated lists.
+
+\par Since everything is stored in 64-bit words, we decided to generated all instructions with the $q$ size suffix.
+
+\subsubsection{Registers Allocation}
+
+\par The current iteration doesn't have any smart register allocation strategy. We generally use only a handful of registers ($\%rax$, $\%rbx$) as our working temporary variables. For every operation we load from memory to those registers and immediately store back. While it is rather inefficient right now, it gave us an opportunity to debug all errors without the complexity of registers allocation.
+
+\subsubsection{Adhering the Calling Convention}
+
+\par Right now, the generated code always pushes all caller saved registers before a function call but we decided not to bother with the callee-saved registers for now since we don't allocate registers anyway.
+
+\subsection{Alternatives}
+
+\par For the memory layout, we could try to implement different memory size for booleans (1 byte) vs integers (8 bytes). This would save the memory allocated, but won't improve the performance in any significant way in the context of this class. (However, one could argue that you would be able to fit more stack variables into L1 cache).
+
+\par We could as well store arrays as null-terminated sequences the way it is done in C.
+
+\section{Implementation Details}
+
+\par The whole code-generation program consists of a lot of pure functions that are used recursively to flatten the IR from blocks and functions into a single big output string.
+
+\par We use a lot of templating for most instruction types and operators. It has been especially comfortable to do using Haskell's pattern matching features.
+
+\par There is not a lot of global state passed around except for a couple of things:
+
+\begin{enumerate}
+\item Constant strings used for callouts (allocated separately in the end in an Read-Only section)
+\item Lookup table for locals on stack
+\item The current position on stack where we can "allocate" new local variables. Since the stack space is allocated once, we keep track of the last offset allocated.
+\end{enumerate}
+
+\section{Known Issues}
+
+\par As far as our current testing shows, there are no known major issues with the code. One minor problem is that the current error messages are not very clear, which is something that will be fixed in later iterations.
+
+\end{document}
