@@ -59,13 +59,13 @@ locStr (place, offset) =
   if offset /= 0 then (show offset) ++ "(" ++ place ++ ")" else place
 
 lookupVariable :: FxContext -> String -> String
-lookupVariable (FxContext _ _ table _) var = 
+lookupVariable (FxContext _ _ table _) var =
   if head var == '$' then var else case HashMap.lookup var table of
                                            Just (place, offset) -> locStr (place, offset)
                                            Nothing -> "Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table)
 
 lookupVariableWithOffset :: FxContext -> String -> (String, Int)
-lookupVariableWithOffset (FxContext _ _ table _) var = 
+lookupVariableWithOffset (FxContext _ _ table _) var =
   case HashMap.lookup var table of
     Just loc -> loc
     Nothing -> ("Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table), 0)
@@ -156,8 +156,8 @@ genFunction cx f =
       prolog = getProlog argsLength (closestMultipleOf16 localsSize)
       ncx1 = foldl
                    (\cx (idx, arg) ->
-                     setVariableLoc cx 
-                                    (LLIR.functionName f ++ "@" ++ show (idx - 1)) 
+                     setVariableLoc cx
+                                    (LLIR.functionName f ++ "@" ++ show (idx - 1))
                                     ("%rbp", (-8) * idx))
                    (newFxContext (LLIR.functionName f) cx)
                    (zip [1..argsLength] $ LLIR.arguments f)
@@ -183,7 +183,7 @@ genBlock cx (Just block) name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
         setupGlobals = if blockName /= "main_entry" then "" else genSetupGlobals (global cx)
 
 genSetupGlobals cx =
-  concat $ intersperse "\n" $ map (\(name, size) -> "  movq $" ++ (show size) ++ ", " ++ name) $ globalArrays cx
+  concat $ map (\(name, size) -> "  movq $" ++ (show size) ++ ", " ++ name ++ "\n") $ globalArrays cx
 
 genInstruction :: FxContext -> Maybe LLIR.VInstruction -> (FxContext, String)
 genInstruction cx Nothing = (cx, "# empty instruction\n")
@@ -212,21 +212,21 @@ genInstruction cx (Just (VAllocation result tp size)) =
          if s > 0 then ("  movq $" ++ (show s) ++ ", " ++ destination ++ "\n") else "")
 
 genInstruction cx (Just (VUnOp result op val)) =
-  let loc = snd $ genAccess cx val 
+  let loc = snd $ genAccess cx val
       instruction = case op of
         "-" -> "  negq %rax\n"
         "!" -> "  testq %rax, %rax\n  movq $0, %rax\n  setz %al\n"
       stackOffset = (offset cx) * (-1)
       destination = (show stackOffset) ++ "(%rbp)"
       ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
-    (ncx, 
+    (ncx,
     "  movq " ++ loc ++ ", %rax\n" ++
     instruction ++
     "  movq %rax, " ++ destination ++ "\n")
 
 genInstruction cx (Just (VBinOp result op val1 val2)) =
-    let loc1 = snd $ genAccess cx val1 
-        loc2 = snd $ genAccess cx val2 
+    let loc1 = snd $ genAccess cx val1
+        loc2 = snd $ genAccess cx val2
         stackOffset = (offset cx) * (-1)
         destination = (show stackOffset) ++ "(%rbp)"
         ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
@@ -247,7 +247,7 @@ genInstruction cx (Just (VMethodCall name isCallout fname args)) =
       cleanRax = "  movq $0, %rax\n"
       postcall = getPostCall $ length args
       stackOffset = (offset cx) * (-1)
-      destination = (show stackOffset) ++ "(%rbp)" 
+      destination = (show stackOffset) ++ "(%rbp)"
       (ncx2, exitMessage) = if fname == "exit" && isCallout then genExitMessage cx (args !! 0) else (ncx, "") in
         (updateOffset $ setVariableLoc ncx2 name ("%rbp", stackOffset),
          exitMessage ++ precall ++ cleanRax ++ "  callq " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
@@ -317,7 +317,7 @@ genInstruction cx (Just (VArrayLen result ref)) =
    (ncx,
    "  movq " ++ access ++ ", %rax\n" ++
    "  movq %rax, " ++ destination ++ "\n")
-  
+
 
 genInstruction cx (Just (VReturn _ maybeRef)) =
   case maybeRef of
@@ -326,7 +326,7 @@ genInstruction cx (Just (VReturn _ maybeRef)) =
 
 genInstruction cx (Just (VCondBranch _ cond true false)) =
   let loc = snd $ genAccess cx cond in
-    (cx, 
+    (cx,
     "  movq " ++ loc ++ ", %rax\n" ++
     "  testq %rax, %rax\n" ++
     "  jnz " ++ name cx ++ "_" ++ true ++ "\n" ++
@@ -354,7 +354,7 @@ genExitMessage cx val = (ncx, "  xorq %rax, %rax\n  movq $" ++ message ++ ", %rd
   where (ncx, message) = case val of
                             LLIR.ConstInt (-1) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Array out of Bounds access in method \\\"" ++ name cx ++ "\\\"\\n\"")
                             LLIR.ConstInt (-2) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Method \\\"" ++ name cx ++ "\\\" didn't return\\n\"")
-        
+
 genOp :: String -> String -> String
 genOp "+" loc  = "  addq "  ++ loc ++ ", %rax\n"
 genOp "-" loc  = "  subq "  ++ loc ++ ", %rax\n"
@@ -382,7 +382,7 @@ genArg cx x =
 genAccess :: FxContext -> ValueRef -> (FxContext, String)
 genAccess cx (InstRef ref) =
   (cx, lookupVariable cx ref)
-  
+
 genAccess cx (ConstInt i) =
   (cx, "$" ++ (show i))
 
@@ -415,7 +415,7 @@ gen mod =
       (cx3, fns) =
         foldl (\(cx, asm) fn ->
                 let (ncx, str) = genFunction cx fn in
-                  (ncx, asm ++ str)) 
+                  (ncx, asm ++ str))
               (cx2, "") fxs
   in
     (genGlobals globals) ++
