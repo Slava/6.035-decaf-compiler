@@ -509,7 +509,7 @@ verifyArgs args argTypes methodName m cx =
               CalloutStringLit lit -> combineCx2 cx (DString==t) $ checkArg DString t name methodName
               CalloutExpression expr ->
                 let (m2, cx2, exprType) = (evalToType $ semanticVerifyExpression expr m cx) in
-                combineCx2 cx2 (exprType==t) $ checkArg exprType t name methodName
+                combineCx2 cx (exprType==t) $ checkArg exprType t name methodName
               ) cx l
 
 
