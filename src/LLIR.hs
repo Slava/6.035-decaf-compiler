@@ -148,6 +148,7 @@ data VInstruction = VUnOp {- name -} String {- operand -} String {- argument nam
                   | VUncondBranch String String
                   | VMethodCall String {- is-callout? -} Bool {- fname -} String {- args -} [ValueRef]
                   | VZeroInstr String {- ref to zero -} ValueRef {- size in bytes -} Int
+                  | VPHINode {- name -} String (HashMap.Map {- block predecessor -} String {- value -} ValueRef)
   deriving (Eq, Show);
 
 instance Namable VInstruction where
@@ -206,6 +207,12 @@ instance Value VInstruction where
       Nothing -> TVoid
 
   getType _ (VArrayLen _ _ ) = TInt
+  getType b (VPHINode _ vals ) =
+    let ems :: [ValueRef] = HashMap.elems vals
+    in case ems of
+      [] -> TVoid
+      a -> getType b (head a)
+
   getType _ (VReturn _ _ ) = TVoid
   getType _ (VCondBranch _ _ _ _) = TVoid
   getType _ (VUncondBranch _ _) = TVoid
@@ -218,6 +225,7 @@ instance Value VInstruction where
   valueEq b (VUnOp _ op1 arg1) (VUnOp _ op2 arg2) = ( valueEq b op1 op2 ) && ( valueEq b arg1 arg2 )
   valueEq b (VBinOp _ op1 a1 b1) (VBinOp _ op2 a2 b2) = ( valueEq b op1 op2 ) && ( valueEq b a1 a2 ) && ( valueEq b b1 b2 )
   valueEq b (VArrayLen _ op1 ) (VArrayLen _ op2) = ( valueEq b op1 op2 )
+  valueEq b (VPHINode a1 _ ) (VPHINode a2 _) = ( valueEq b a1 a2 )
   valueEq b _ _ = False
 
 data VCallout = VCallout String
@@ -376,6 +384,26 @@ appendInstruction instr builderm =
         Just builder2 -> builder2
         Nothing -> builder0
 
+updateInstruction :: VInstruction -> Builder -> Builder
+updateInstruction instr builderm =
+  let builder0 = builderm--addDebug builderm $ printf "PAdding instr %s at %s\n" (show instr) (show $ location builderm)
+      updated :: Maybe Builder =
+        do
+          let builder = builder0--addDebug builder0 $ printf "Adding instruction %s\n" (show instr)
+          let context = location builder
+          let pmod1 = pmod builder
+          let fn = contextFunctionName context
+          let bn = contextBlockName context
+          func <- HashMap.lookup fn (functions pmod1)
+          block <- HashMap.lookup bn (blocks func)
+          block2 <- return $ block
+          func2 <- return $ func{blocks=(HashMap.insert bn block2 (blocks func)),functionInstructions=(HashMap.insert (getName instr) instr (functionInstructions func))}
+          functions2 <- return $ HashMap.insert fn func2 (functions pmod1)
+          return $ builder{pmod=pmod1{functions=functions2}}
+      in case updated of
+        Just builder2 -> builder2
+        Nothing -> builder0
+
 createUnaryOp :: {-Operand-} String -> ValueRef -> Builder -> (ValueRef,Builder)
 createUnaryOp op operand builder =
   let (name, pmod2) :: (String, PModule) = createID $ pmod builder
@@ -512,6 +540,34 @@ createReturn retValue builder =
       builder2 :: Builder = appendInstruction (VReturn name retValue) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
+
+createPHINode :: Builder -> (ValueRef, Builder)
+createPHINode builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VPHINode name HashMap.empty) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
+phiAddIncoming :: ValueRef -> String ->ValueRef -> Builder -> Builder
+phiAddIncoming inVal inBlock phi builder =
+  case phi of
+    (InstRef phiInst) ->
+      case getInstruction builder phiInst of
+        (Just (VPHINode nam blcks)) ->
+           updateInstruction (VPHINode nam (HashMap.insert inBlock inVal blcks)) builder
+        _ -> builder
+    _ -> builder
+
+phiRemoveBlock :: String ->ValueRef -> Builder -> Builder
+phiRemoveBlock inBlock phi builder =
+  case phi of
+    (InstRef phiInst) ->
+      case getInstruction builder phiInst of
+        (Just (VPHINode nam blcks)) ->
+           updateInstruction (VPHINode nam (HashMap.delete inBlock blcks)) builder
+        _ -> builder
+    _ -> builder
 
 createCondBranch :: ValueRef -> String -> String -> Builder -> (ValueRef, Builder)
 createCondBranch cond trueBranch falseBranch builder =
