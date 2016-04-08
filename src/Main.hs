@@ -34,6 +34,7 @@ import qualified Parser
 import qualified Scanner
 import qualified SemanticChecker
 import qualified CodeGen
+import qualified OPT
 
 import qualified LLIR
 
@@ -152,7 +153,7 @@ codeGen configuration input = do
       let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
         if length ios /= 0
          then Right $ (LLIR.debugs asts) ++ ios
-         else let asm = CodeGen.gen (LLIR.pmod asts)
+         else let asm = CodeGen.gen (LLIR.pmod $ OPT.optimize asts)
                   maybePath = Configuration.outputFileName configuration in
               case maybePath of
                 Just path -> Right [writeFile path asm]

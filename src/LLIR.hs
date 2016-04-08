@@ -63,6 +63,11 @@ class Locationable a where
 
 class Value a where
   getType :: Builder -> a -> VType
+  valueEq :: Builder -> a -> a -> Bool
+
+instance Value String where
+  getType _ a = TString
+  valueEq _ a b = a == b
 
 data ValueRef = InstRef String
               | ConstInt Integer
@@ -111,6 +116,23 @@ instance Value ValueRef where
     of
       Just t -> t
       Nothing -> TVoid
+
+  valueEq builder (InstRef str1) (InstRef str2) =
+    case do
+      inst1 <- getInstruction builder str1
+      inst2 <- getInstruction builder str2
+      return $ valueEq builder inst1 inst2
+    of
+      Just a -> a
+      Nothing -> False
+  valueEq builder (ConstInt a) (ConstInt b) = a == b
+  valueEq builder (ConstString a) (ConstString b) = a == b
+  valueEq builder (ConstBool a) (ConstBool b) = a == b
+  valueEq builder (CalloutRef a) (CalloutRef b) = a == b
+  valueEq builder (GlobalRef a) (GlobalRef b) = a == b
+  valueEq builder (FunctionRef a) (FunctionRef b) = a == b
+  valueEq builder (ArgRef a1 b1) (ArgRef a2 b2) = (a1 == a2) && (b1 == b2)
+  valueEq builder _ _ = False
 
 data VInstruction = VUnOp {- name -} String {- operand -} String {- argument name -} ValueRef
                   | VBinOp {- name -} String {- operand -} String {- argument name -} ValueRef ValueRef
@@ -193,11 +215,17 @@ instance Value VInstruction where
       Nothing -> TVoid
       Just a -> returnType a
 
+  valueEq b (VUnOp _ op1 arg1) (VUnOp _ op2 arg2) = ( valueEq b op1 op2 ) && ( valueEq b arg1 arg2 )
+  valueEq b (VBinOp _ op1 a1 b1) (VBinOp _ op2 a2 b2) = ( valueEq b op1 op2 ) && ( valueEq b a1 a2 ) && ( valueEq b b1 b2 )
+  valueEq b (VArrayLen _ op1 ) (VArrayLen _ op2) = ( valueEq b op1 op2 )
+  valueEq b _ _ = False
+
 data VCallout = VCallout String
   deriving(Eq, Show);
 
 instance Value VCallout where
   getType _ _ = TCallout
+  valueEq _ a b = a == b
 
 instance Namable VCallout where
   getName (VCallout name) = name
