@@ -166,7 +166,7 @@ instance Namable VInstruction where
   getName (VMethodCall name _ _ _) = name
   getName (VUnreachable name ) = name
   getName (VZeroInstr name _ _) = name
-
+  getName (VPHINode name _) = name
 
 instance Value VInstruction where
   getType _ (VUnOp _ op _ )
@@ -541,6 +541,14 @@ createReturn retValue builder =
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
+createPHINode2 :: (HashMap.Map String ValueRef) -> Builder -> (ValueRef, Builder)
+createPHINode2 hmap builder =
+  let pmod1 = pmod builder
+      (name, pmod2) :: (String, PModule) = createID pmod1
+      builder2 :: Builder = appendInstruction (VPHINode name hmap) builder{pmod=pmod2}
+      ref :: ValueRef = InstRef name in
+      (ref, builder2)
+
 createPHINode :: Builder -> (ValueRef, Builder)
 createPHINode builder =
   let pmod1 = pmod builder
@@ -549,7 +557,7 @@ createPHINode builder =
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
-phiAddIncoming :: ValueRef -> String ->ValueRef -> Builder -> Builder
+phiAddIncoming :: ValueRef -> String -> ValueRef -> Builder -> Builder
 phiAddIncoming inVal inBlock phi builder =
   case phi of
     (InstRef phiInst) ->
@@ -559,7 +567,7 @@ phiAddIncoming inVal inBlock phi builder =
         _ -> builder
     _ -> builder
 
-phiRemoveBlock :: String ->ValueRef -> Builder -> Builder
+phiRemoveBlock :: String -> ValueRef -> Builder -> Builder
 phiRemoveBlock inBlock phi builder =
   case phi of
     (InstRef phiInst) ->
@@ -684,3 +692,6 @@ createPModule = PModule (HashMap.empty) (HashMap.empty) (HashMap.empty) 0
 
 createBuilder :: Builder
 createBuilder = Builder createPModule (Context "" "") []
+
+getBlock :: Builder -> String
+getBlock builder = contextBlockName . location $ builder

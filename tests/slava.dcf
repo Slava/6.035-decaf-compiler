@@ -1,6 +1,7 @@
-callout devafg;
+callout printf;
 
-void main(int a) {
-  boolean x;
-  x = false || false && !true || true && true == true || false && z;
+void main() {
+//    int x;
+//    x = ;
+    printf("%d\n", true ? 1 : 0);
 }

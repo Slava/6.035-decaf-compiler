@@ -437,19 +437,21 @@ semanticVerifyExpression (CondExpression cCond cTrue cFalse) m ar =
       ar6 = combineCx2 ar5 (ty3 == ty4)  $ printf "Types in ternary don't match %s %s\n" (show ty3) (show ty4)
       (block1, ar7) = addInstruction2 ar6 $ LLIR.createBlock "condTrue"
       (block2, ar8) = addInstruction2 ar7 $ LLIR.createBlock "condFalse"
-      (ptr, ar9) = addInstruction2 ar8 $ LLIR.createAlloca ty3 Nothing
-      (val, ar10) = addInstruction2 ar9 $ LLIR.createCondBranch v2 block1 block2
+    --   (ptr, ar9) = addInstruction2 ar8 $ LLIR.createAlloca ty3 Nothing
+      (val, ar10) = addInstruction2 ar8 $ LLIR.createCondBranch v2 block1 block2
       (blockMerge, ar11) = addInstruction2 ar10 $ LLIR.createBlock "condMerge"
       ar12 = addInstruction ar11 $ LLIR.setInsertionPoint block1
       (m3, ar13, v3) = semanticVerifyExpression cTrue m2 ar12
-      (_, ar14) = addInstruction2 ar13 $ LLIR.createStore v3 ptr
-      (_, ar15) = addInstruction2 ar14 $ LLIR.createUncondBranch blockMerge
+      b3 = LLIR.getBlock $ contextBuilder ar13
+    --   (_, ar14) = addInstruction2 ar13 $ LLIR.createStore v3 ptr
+      (_, ar15) = addInstruction2 ar13 $ LLIR.createUncondBranch blockMerge
       ar16 = addInstruction ar15 $ LLIR.setInsertionPoint block2
       (m4, ar17, v4) = semanticVerifyExpression cFalse m3 ar16
-      (_, ar18) = addInstruction2 ar17 $ LLIR.createStore v4 ptr
-      (_, ar19) = addInstruction2 ar18 $ LLIR.createUncondBranch blockMerge
+      b4 = LLIR.getBlock $ contextBuilder ar17
+    --   (_, ar18) = addInstruction2 ar17 $ LLIR.createStore v4 ptr
+      (_, ar19) = addInstruction2 ar17 $ LLIR.createUncondBranch blockMerge
       ar20 = addInstruction ar19 $ LLIR.setInsertionPoint blockMerge
-      (val2, ar21) = addInstruction2 ar20 $ LLIR.createLookup ptr
+      (val2, ar21) = addInstruction2 ar20 $ LLIR.createPHINode2 $ HashMap.fromList [(b3, v3), (b4, v4)]
       in (m4, ar21, val2)
 
 semanticVerifyExpression (LocationExpression loc) m ar =
