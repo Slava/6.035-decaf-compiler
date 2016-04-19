@@ -228,6 +228,65 @@ instance Value VInstruction where
   valueEq b (VPHINode a1 _ ) (VPHINode a2 _) = ( valueEq b a1 a2 )
   valueEq b _ _ = False
 
+safeBangBang :: [a] -> Int -> Maybe a
+safeBangBang list index = case (length list) > index of
+    True -> Just $ list !! index
+    False -> Nothing
+
+getOp :: VInstruction -> Int -> Maybe ValueRef
+getOp (VUnOp _ _ val0) 0 = Just val0
+getOp (VBinOp _ _ val0 _) 0 = Just val0
+getOp (VBinOp _ _ _ val1) 1 = Just val1
+getOp (VStore _ val0 _) 0 = Just val0
+getOp (VStore _ _ val1) 1 = Just val1
+getOp (VLookup _ val0) 0 = Just val0
+getOp (VArrayStore _ val0 _ _) 0 = Just val0
+getOp (VArrayStore _ _ val1 _) 1 = Just val1
+getOp (VArrayStore _ _ _ val2) 2 = Just val2
+getOp (VArrayLookup _ val0 _) 0 = Just val0
+getOp (VArrayLookup _ _ val1) 0 = Just val1
+getOp (VArrayLen _ val0) 0 = Just val0
+getOp (VReturn _ val0) 0 = val0
+getOp (VCondBranch _ val0 _ _) 0 = Just val0
+getOp (VMethodCall _ _ _ vals) i = safeBangBang vals i
+getOp (VZeroInstr _ val0 _) 0 = Just val0
+getOp (VPHINode _ valMap) i = safeBangBang (HashMap.elems valMap) i
+getOp _ _ = Nothing
+
+replaceOp :: VInstruction -> Int -> ValueRef -> VInstruction
+replaceOp (VUnOp a b _) 0 nval = (VUnOp a b nval)
+replaceOp (VBinOp a b _ val1) 0 nval = (VBinOp a b nval val1)
+replaceOp (VBinOp a b val0 _) 1 nval = (VBinOp a b val0 nval)
+replaceOp (VStore a _ val1) 0 nval = (VStore a nval val1)
+replaceOp (VStore a val0 _) 1 nval = (VStore a val0 nval)
+replaceOp (VLookup a _) 0 nval = (VLookup a nval)
+replaceOp (VArrayStore a _ val1 val2) 0 nval = (VArrayStore a nval val1 val2)
+replaceOp (VArrayStore a val0 _ val2) 1 nval = (VArrayStore a val0 nval val2)
+replaceOp (VArrayStore a val0 val1 _) 2 nval = (VArrayStore a val0 val1 nval)
+replaceOp (VArrayLookup a _ val1) 0 nval = (VArrayLookup a nval val1)
+replaceOp (VArrayLookup a val0 _) 0 nval = (VArrayLookup a val0 nval)
+replaceOp (VArrayLen a _) 0 nval = (VArrayLen a nval)
+replaceOp (VReturn a _) 0 nval = (VReturn a (Just nval))
+replaceOp (VCondBranch a _ b c) 0 nval = (VCondBranch a nval b c)
+replaceOp (VMethodCall a b c vals) i nval = (VMethodCall a b c (take i vals ++ [nval] ++ drop (i + 1) vals))
+replaceOp (VZeroInstr a _ b) 0 nval = (VZeroInstr a nval b)
+replaceOp (VPHINode a valMap) i nval = case (safeBangBang (HashMap.keys valMap) i) of
+    Just key -> (VPHINode a $ HashMap.insert key nval valMap)
+    Nothing -> (VPHINode a valMap)
+replaceOp a _ _ = a
+
+-- builder name of instruction int valueref returns builder
+replaceInstr :: Builder -> String -> Int -> ValueRef -> Builder
+replaceInstr builder instrName index nval =
+    let funcName = contextFunctionName $ location builder
+        func = HashMap.lookup funcName (functions $ pmod builder)
+        instr = HashMap.lookup instrName (functionInstructions func)
+        newOp = case instr of
+            Just existingInstr -> replaceOp existingInstr index nval
+            Nothing -> instr
+        newFuncs = HashMap.update (\_ -> newOp) instrName (functionInstructions func)
+        in builder{pmod=(pmod builder){functions=newFuncs}}
+
 data VCallout = VCallout String
   deriving(Eq, Show);
 

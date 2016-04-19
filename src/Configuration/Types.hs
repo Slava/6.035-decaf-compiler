@@ -36,6 +36,7 @@ data CompilerStage = Scan
                    | AST
                    | SemanticCheck
                    | Inter
+                   | OPT
                    | Assembly
                    deriving (Eq, Ord)
 instance Show CompilerStage where
@@ -44,6 +45,7 @@ instance Show CompilerStage where
   show AST   = "ast"
   show SemanticCheck = "semanticCheck"
   show Inter = "inter"
+  show OPT = "opt"
   show Assembly = "assembly"
 
 instance Read CompilerStage where
@@ -52,6 +54,7 @@ instance Read CompilerStage where
   readsPrec _ "ast"   = [(AST, "")]
   readsPrec _ "semanticCheck" = [(SemanticCheck, "")]
   readsPrec _ "inter" = [(Inter, "")]
+  readsPrec _ "opt" = [(OPT, "")]
   readsPrec _ "assembly" = [(Assembly, "")]
   readsPrec _ _ = []
 

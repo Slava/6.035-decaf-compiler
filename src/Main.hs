@@ -99,6 +99,7 @@ process configuration input =
     Scan -> scan configuration input
     Parse -> parse configuration input
     Inter -> semanticCheck configuration input
+    OPT -> doOPT configuration input
     Assembly -> codeGen configuration input
     AST -> printAst configuration input
     phase -> Left $ show phase ++ " not implemented\n"
@@ -141,6 +142,24 @@ semanticCheck configuration input = do
             hClose hOutput
           ]
 
+doOPT :: Configuration -> String -> Either String [IO ()]
+doOPT configuration input = do
+    let (errors, tokens) = partitionEithers $ Scanner.scan input
+    -- If errors occurred, bail out.
+    mapM_ (mungeErrorMessage configuration . Left) errors
+    -- Otherwise, attempt a parse.
+    case (Parser.parse tokens) of
+      Left  a -> Left a
+      Right ast ->
+        let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
+        if length ios /= 0
+          then Right $ (LLIR.debugs asts) ++ ios
+          else Right $ (LLIR.debugs asts) ++ [ do
+              hOutput <- maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
+              hPutStrLn hOutput (show $ LLIR.pmod $ OPT.optimize asts)
+              hClose hOutput
+            ]
+
 codeGen :: Configuration -> String -> Either String [IO ()]
 codeGen configuration input = do
   let (errors, tokens) = partitionEithers $ Scanner.scan input
@@ -153,7 +172,7 @@ codeGen configuration input = do
       let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
         if length ios /= 0
          then Right $ (LLIR.debugs asts) ++ ios
-         else let asm = CodeGen.gen (LLIR.pmod $ OPT.optimize asts)
+         else let asm = CodeGen.gen (LLIR.pmod asts)
                   maybePath = Configuration.outputFileName configuration in
               case maybePath of
                 Just path -> Right [writeFile path asm]

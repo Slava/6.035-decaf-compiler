@@ -77,7 +77,7 @@ options = [ Option ['t'] ["target"]
           ]
 
 longDescription :: String
-longDescription = unlines [ "  -t <stage>          <stage> is one of \"scan\", \"parse\", \"inter\", \"ast\" \"semanticCheck\" or \"assembly\"."
+longDescription = unlines [ "  -t <stage>          <stage> is one of \"scan\", \"parse\", \"inter\", \"ast\", \"semanticCheck\", \"opt\", \"assembly\"."
                           , "  --target=<stage>    Compilation will proceed to the given stage and halt there."
                           , "  "
                           , "  -d                  Print debugging information.  If this option is not given,"
