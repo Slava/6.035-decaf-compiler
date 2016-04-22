@@ -282,7 +282,7 @@ replaceOp (VArrayStore a _ val1 val2) 0 nval = (VArrayStore a nval val1 val2)
 replaceOp (VArrayStore a val0 _ val2) 1 nval = (VArrayStore a val0 nval val2)
 replaceOp (VArrayStore a val0 val1 _) 2 nval = (VArrayStore a val0 val1 nval)
 replaceOp (VArrayLookup a _ val1) 0 nval = (VArrayLookup a nval val1)
-replaceOp (VArrayLookup a val0 _) 0 nval = (VArrayLookup a val0 nval)
+replaceOp (VArrayLookup a val0 _) 1 nval = (VArrayLookup a val0 nval)
 replaceOp (VArrayLen a _) 0 nval = (VArrayLen a nval)
 replaceOp (VReturn a _) 0 nval = (VReturn a (Just nval))
 replaceOp (VCondBranch a _ b c) 0 nval = (VCondBranch a nval b c)
@@ -310,6 +310,9 @@ data Use = Use {
   useInstruction :: String,
   useIndex :: Int
 } deriving(Eq, Show);
+
+getUseInstr :: VFunction -> Use -> Maybe VInstruction
+getUseInstr func use = HashMap.lookup (useInstruction use) (functionInstructions func)
 
 getUseValue :: VFunction -> Use -> Maybe ValueRef
 getUseValue func use =
@@ -521,6 +524,13 @@ updateInstruction instr builderm =
       in case updated of
         Just builder2 -> builder2
         Nothing -> builder0
+
+deleteInstruction :: VInstruction -> VFunction -> VFunction
+deleteInstruction instr func =
+  let deleteFromBlock = \block -> block{blockInstructions=filter (\s -> s /= (getName instr) ) (blockInstructions block) }
+      nblocks :: HashMap.Map String VBlock = HashMap.map deleteFromBlock (blocks func)
+      ninsts = HashMap.delete (getName instr) (functionInstructions func)
+      in func{functionInstructions=ninsts, blocks=nblocks}
 
 createUnaryOp :: {-Operand-} String -> ValueRef -> Builder -> (ValueRef,Builder)
 createUnaryOp op operand builder =
