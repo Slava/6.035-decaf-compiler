@@ -276,16 +276,19 @@ replaceOp (VPHINode a valMap) i nval = case (safeBangBang (HashMap.keys valMap) 
 replaceOp a _ _ = a
 
 -- builder name of instruction int valueref returns builder
-replaceInstr :: Builder -> String -> Int -> ValueRef -> Builder
-replaceInstr builder instrName index nval =
+replaceInstrOp :: Builder -> String -> Int -> ValueRef -> Builder
+replaceInstrOp builder instrName index nval =
+  case do
     let funcName = contextFunctionName $ location builder
-        func = HashMap.lookup funcName (functions $ pmod builder)
-        instr = HashMap.lookup instrName (functionInstructions func)
-        newOp = case instr of
-            Just existingInstr -> replaceOp existingInstr index nval
-            Nothing -> instr
-        newFuncs = HashMap.update (\_ -> newOp) instrName (functionInstructions func)
-        in builder{pmod=(pmod builder){functions=newFuncs}}
+    func <- HashMap.lookup funcName (functions $ pmod builder)
+    instr <- HashMap.lookup instrName (functionInstructions func)
+    let newOp = replaceOp instr index nval
+    let newInstrs :: HashMap.Map String VInstruction = HashMap.insert instrName newOp (functionInstructions func)
+    let newFuncs  :: HashMap.Map String VFunction    = HashMap.insert funcName func{functionInstructions=newInstrs} (functions $ pmod builder)
+    return $ builder{pmod=(pmod builder){functions=newFuncs}}
+  of
+    Just a -> a
+    Nothing -> builder
 
 data VCallout = VCallout String
   deriving(Eq, Show);
