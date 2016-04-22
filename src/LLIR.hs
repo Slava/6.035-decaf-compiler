@@ -9,6 +9,7 @@ module LLIR where
 -- Imports
 import Prelude
 import Data.List
+import Data.Maybe
 import Text.Printf (printf)
 --import ParseTypes
 import qualified Data.Map as HashMap
@@ -233,6 +234,22 @@ safeBangBang list index = case (length list) > index of
     True -> Just $ list !! index
     False -> Nothing
 
+opCount :: VInstruction -> Int
+opCount (VUnOp _ _ _) = 1
+opCount (VBinOp _ _ _ _) = 2
+opCount (VStore _ _ _) = 2
+opCount (VLookup _ _) = 1
+opCount (VArrayStore _ _ _ _) = 3
+opCount (VArrayLookup _ _ _) = 2
+opCount (VArrayLen _ _) = 1
+opCount (VReturn _ (Just a)) = 1
+opCount (VReturn _ Nothing) = 0
+opCount (VCondBranch _ _ _ _) = 1
+opCount (VMethodCall _ _ _ vals) = length vals
+opCount (VZeroInstr _ _ _) = 0
+opCount (VPHINode _ valMap) = length (HashMap.elems valMap)
+opCount _ = 0
+
 getOp :: VInstruction -> Int -> Maybe ValueRef
 getOp (VUnOp _ _ val0) 0 = Just val0
 getOp (VBinOp _ _ val0 _) 0 = Just val0
@@ -248,6 +265,7 @@ getOp (VArrayLookup _ _ val1) 0 = Just val1
 getOp (VArrayLen _ val0) 0 = Just val0
 getOp (VReturn _ val0) 0 = val0
 getOp (VCondBranch _ val0 _ _) 0 = Just val0
+-------- TODO MAKE THE function itself an op!!!
 getOp (VMethodCall _ _ _ vals) i = safeBangBang vals i
 getOp (VZeroInstr _ val0 _) 0 = Just val0
 getOp (VPHINode _ valMap) i = safeBangBang (HashMap.elems valMap) i
@@ -276,19 +294,57 @@ replaceOp (VPHINode a valMap) i nval = case (safeBangBang (HashMap.keys valMap) 
 replaceOp a _ _ = a
 
 -- builder name of instruction int valueref returns builder
-replaceInstrOp :: Builder -> String -> Int -> ValueRef -> Builder
-replaceInstrOp builder instrName index nval =
+replaceInstrOp :: VFunction -> String -> Int -> ValueRef -> VFunction
+replaceInstrOp func instrName index nval =
   case do
-    let funcName = contextFunctionName $ location builder
-    func <- HashMap.lookup funcName (functions $ pmod builder)
     instr <- HashMap.lookup instrName (functionInstructions func)
     let newOp = replaceOp instr index nval
     let newInstrs :: HashMap.Map String VInstruction = HashMap.insert instrName newOp (functionInstructions func)
-    let newFuncs  :: HashMap.Map String VFunction    = HashMap.insert funcName func{functionInstructions=newInstrs} (functions $ pmod builder)
-    return $ builder{pmod=(pmod builder){functions=newFuncs}}
+    return $ func{functionInstructions=newInstrs}
   of
     Just a -> a
-    Nothing -> builder
+    Nothing -> func
+
+
+data Use = Use {
+  useInstruction :: String,
+  useIndex :: Int
+} deriving(Eq, Show);
+
+getUseValue :: VFunction -> Use -> Maybe ValueRef
+getUseValue func use =
+    do
+      inst <- HashMap.lookup (useInstruction use) (functionInstructions func)
+      val <- getOp inst (useIndex use)
+      return $ val
+
+setUseValue :: VFunction -> Use -> ValueRef -> VFunction
+setUseValue func use val = replaceInstrOp func (useInstruction use) (useIndex use) val
+
+-- get all uses that this instruction uses (ie all things this instruction depends on)
+getUsed :: VInstruction -> [Use]
+getUsed inst =
+  map (\idx -> ( Use (getName inst) idx) ) [0..(opCount inst)]
+
+-- get all uses that this instruction is used by (ie all things this function is depended on)
+getUses :: VInstruction -> VFunction -> [Use]
+getUses inst func =
+  let instM = (functionInstructions func)
+      isValid :: (Use -> Maybe Use) = \mval -> do
+          val <- getUseValue func mval
+          ninst <- case val of
+            InstRef a -> HashMap.lookup a instM
+            _ -> Nothing
+          if inst == ninst then Just mval else Nothing
+      in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
+
+getAllocas :: VFunction -> [VInstruction]
+getAllocas fun =
+  let instmap = functionInstructions fun
+      insts = HashMap.elems instmap
+      in filter (\x -> case x of
+        VAllocation _ _ _ -> True
+        _ -> False) insts
 
 data VCallout = VCallout String
   deriving(Eq, Show);
