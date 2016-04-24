@@ -169,7 +169,11 @@ getLastOther instr instrs =
             Nothing -> case i of
                 VStore _ _ instrRef -> Nothing
                 VLookup _ instrRef -> Nothing
-                a -> Just a) Nothing instrs
+                a ->
+                  let used = (getUsed a)
+                      usedThis = any (\x -> (useInstruction x) == (getName instr)) used
+                      in if usedThis then Just a else Nothing
+            ) Nothing instrs
 
 instance Namable VInstruction where
   getName (VUnOp name _ _ ) = name
@@ -324,7 +328,6 @@ replaceInstrOp func instrName index nval =
     Just a -> a
     Nothing -> func
 
-
 data Use = Use {
   useInstruction :: String,
   useIndex :: Int
@@ -336,7 +339,7 @@ replaceUse func use val = replaceInstrOp func (useInstruction use) (useIndex use
 replaceAllUses :: VFunction -> VInstruction -> ValueRef -> VFunction
 replaceAllUses func instr val =
     let uses = getUses instr func
-        in foldl (\acc use -> replaceUse func use val) func uses
+        in foldl (\acc use -> replaceUse acc use val) func uses
 
 deleteAllUses :: VFunction -> VInstruction -> VFunction
 deleteAllUses sfunc instr =

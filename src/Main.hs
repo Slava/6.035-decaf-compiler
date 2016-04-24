@@ -151,14 +151,16 @@ doOPT configuration input = do
     case (Parser.parse tokens) of
       Left  a -> Left a
       Right ast ->
-        let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other) in
-        if length ios /= 0
-          then Right $ (LLIR.debugs asts) ++ ios
-          else Right $ (LLIR.debugs asts) ++ [ do
-              hOutput <- maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
-              hPutStrLn hOutput (show $ LLIR.pmod $ OPT.optimize asts)
-              hClose hOutput
-            ]
+        let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other)
+            asts2 = if length ios /=0 then asts else OPT.optimize asts
+            in
+              if length ios /= 0
+                then Right $ (LLIR.debugs asts2) ++ ios
+                else Right $ (LLIR.debugs asts2) ++ [ do
+                    hOutput <- maybe (hDuplicate stdout) (flip openFile WriteMode) $ Configuration.outputFileName configuration
+                    hPutStrLn hOutput (show $ LLIR.pmod $ asts2)
+                    hClose hOutput
+                  ]
 
 codeGen :: Configuration -> String -> Either String [IO ()]
 codeGen configuration input = do
