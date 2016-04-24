@@ -1,8 +1,8 @@
 callout printf;
 
 void main() {
-        int x;
-        int y;
+    int x;
+    int y;
 	x = 10;
-        printf("%d\n", x);
+    printf("%d\n", x);
 }

@@ -152,6 +152,25 @@ data VInstruction = VUnOp {- name -} String {- operand -} String {- argument nam
                   | VPHINode {- name -} String (HashMap.Map {- block predecessor -} String {- value -} ValueRef)
   deriving (Eq, Show);
 
+getLastStore :: VInstruction -> [VInstruction] -> Maybe VInstruction
+getLastStore instr instrs =
+    let instrRef = InstRef $ getName instr
+        in foldr (\i acc -> case acc of
+            Just a -> acc
+            Nothing -> case i of
+                VStore _ _ instrRef -> Just i
+                _ -> Nothing) Nothing instrs
+
+getLastOther :: VInstruction -> [VInstruction] -> Maybe VInstruction
+getLastOther instr instrs =
+    let instrRef = InstRef $ getName instr
+        in foldr (\i acc -> case acc of
+            Just a -> acc
+            Nothing -> case i of
+                VStore _ _ instrRef -> Nothing
+                VLookup _ instrRef -> Nothing
+                a -> Just a) Nothing instrs
+
 instance Namable VInstruction where
   getName (VUnOp name _ _ ) = name
   getName (VBinOp name _ _ _ ) = name
@@ -311,6 +330,22 @@ data Use = Use {
   useIndex :: Int
 } deriving(Eq, Show);
 
+replaceUse :: VFunction -> Use -> ValueRef -> VFunction
+replaceUse func use val = replaceInstrOp func (useInstruction use) (useIndex use) val
+
+replaceAllUses :: VFunction -> VInstruction -> ValueRef -> VFunction
+replaceAllUses func instr val =
+    let uses = getUses instr func
+        in foldl (\acc use -> replaceUse func use val) func uses
+
+deleteAllUses :: VFunction -> VInstruction -> VFunction
+deleteAllUses sfunc instr =
+    let uses = getUses instr sfunc
+        in foldl (\func use ->
+          case getUseInstr func use of
+            Just inst -> deleteInstruction inst func
+            Nothing -> func) sfunc uses
+
 getUseInstr :: VFunction -> Use -> Maybe VInstruction
 getUseInstr func use = HashMap.lookup (useInstruction use) (functionInstructions func)
 
@@ -367,6 +402,28 @@ data VFunction    = VFunction {
   blocks    :: HashMap.Map String VBlock,
   blockOrder :: [String]
 } deriving (Eq);
+
+getInstructionsBefore :: VFunction -> VInstruction -> [VInstruction]
+getInstructionsBefore func instr =
+    case do
+        let blockName = getInstructionParent func instr
+        block <- HashMap.lookup blockName (blocks func)
+        let instrMaybes = map (\name -> HashMap.lookup name $ functionInstructions func) (blockInstructions block)
+        let instrs = catMaybes instrMaybes
+        _ <- if length instrs == length instrMaybes then Just True else Nothing
+        index <- elemIndex instr instrs
+        return $ take index instrs
+    of
+        Just a -> a
+        Nothing -> []
+
+getInstructionParent :: VFunction -> VInstruction -> String
+getInstructionParent func instr =
+    let f :: String -> Bool = (\instr2 -> instr2 == getName instr)
+        x :: [VBlock] = filter (\block -> any (True==) $ map f $ blockInstructions block) (HashMap.elems $ blocks func)
+        in case x of
+            [y] -> getName y
+            _ -> ""
 
 blockToString :: (HashMap.Map String VInstruction) -> VBlock -> String
 blockToString hm (VBlock _ name instr) =

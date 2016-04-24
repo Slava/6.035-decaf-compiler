@@ -56,19 +56,55 @@ mem2reg_function func =
   let allocas = getAllocas func
       foldf = \(func, changed) alloca -> if changed then (func, True) else
         -- attempt change
-        let uses :: [Use] = getUses alloca func
-            (stores, loads, others) = partitionStoreLoadOther func uses
+        let uses0 :: [Use] = getUses alloca func
+            (_, loads0, _) = partitionStoreLoadOther func uses0
+            (newFunc,changed0) = foldl (\(acc,changed) loadu -> case do
+                    loadf <- getUseInstr acc loadu
+                    val <- getPreviousStoreValue func alloca loadf
+                    let replU = replaceAllUses func loadf val
+                    return $ deleteInstruction loadf replU
+                of
+                    Nothing -> (acc,False)
+                    Just a -> (a,True)
+                ) (func,False) loads0
+            --(newFunc, changed0) = (func, False)
+            uses :: [Use] = getUses alloca newFunc
+            (stores, loads, others) = partitionStoreLoadOther newFunc uses
         in
           if (length uses) == (length stores) then
-            let nfunc  = deleteInstruction alloca func
-                nfunc2 = foldl (\func use ->
-                  case getUseInstr func use of
-                    Just inst -> deleteInstruction inst func
-                    Nothing -> func) nfunc uses
-                in (nfunc2, True)
-            else (func, False)
+             let nfunc2 = deleteAllUses newFunc alloca
+                 nfunc  = deleteInstruction alloca nfunc2
+                  in (nfunc, True)
+            else (newFunc, changed0)
       (nfunc, changed) = foldl foldf (func, False) allocas
       in if changed then mem2reg_function nfunc else func
 
 optimize :: Builder -> Builder
 optimize b = cse $ mem2reg b
+
+unsafeElemIndex :: Eq a => a -> [a] -> Int
+unsafeElemIndex item array =
+    case elemIndex item array of
+        Just a -> a
+        Nothing -> -1
+
+getPreviousStoreValue :: VFunction -> VInstruction -> VInstruction -> Maybe ValueRef
+getPreviousStoreValue func alloca instr =
+    do
+        i <- getPreviousStore func alloca instr
+        case i of
+            VStore _ a _ -> Just a
+            _ -> Nothing
+
+-- Helps eliminates unnecessary loads.
+getPreviousStore :: VFunction -> VInstruction -> VInstruction -> Maybe VInstruction
+getPreviousStore func alloca instr =
+    do
+        let prevInstrs = getInstructionsBefore func instr
+        prevStore <- getLastStore alloca prevInstrs
+        let prevOther = getLastOther alloca prevInstrs
+        _ <- if case prevOther of
+                    Nothing -> True
+                    Just a -> unsafeElemIndex a prevInstrs < unsafeElemIndex prevStore prevInstrs
+             then Just True else Nothing
+        return prevStore
