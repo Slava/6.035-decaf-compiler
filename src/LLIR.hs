@@ -158,22 +158,23 @@ getLastStore instr instrs =
         in foldr (\i acc -> case acc of
             Just a -> acc
             Nothing -> case i of
-                VStore _ _ instrRef -> Just i
+                VStore _ _ sloc -> if sloc == instrRef then Just i else Nothing
                 _ -> Nothing) Nothing instrs
 
 getLastOther :: VInstruction -> [VInstruction] -> Maybe VInstruction
 getLastOther instr instrs =
     let instrRef = InstRef $ getName instr
-        in foldr (\i acc -> case acc of
+      in  foldr (\i acc -> case acc of
             Just a -> acc
-            Nothing -> case i of
-                VStore _ _ instrRef -> Nothing
-                VLookup _ instrRef -> Nothing
-                a ->
-                  let used = (getUsed a)
-                      usedThis = any (\x -> (useInstruction x) == (getName instr)) used
-                      in if usedThis then Just a else Nothing
-            ) Nothing instrs
+            Nothing ->
+              let used = (getUsed i)
+                  usedThis = any (\x -> (useInstruction x) == (getName instr)) used
+                  in if (not usedThis) then Nothing
+                    else case i of
+                      VStore _ _ sloc -> if sloc == instrRef then Nothing else Just i
+                      VLookup _ sloc -> if sloc == instrRef then Nothing else Just i
+                      _ -> Just i
+          ) Nothing instrs
 
 instance Namable VInstruction where
   getName (VUnOp name _ _ ) = name

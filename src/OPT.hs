@@ -69,9 +69,10 @@ mem2reg_function func =
             (_, loads0, _) = partitionStoreLoadOther func uses0
             (newFunc,changed0, dbg2) = foldl (\(acc,changed, dbg) loadu -> case do
                     loadf <- maybeToError2 (getUseInstr acc loadu) $ [] -- [printf "load failed :(\n"]
+                    valS <- getPreviousStore acc alloca loadf
                     val <- getPreviousStoreValue acc alloca loadf
                     let replU = replaceAllUses acc loadf val
-                    let res :: (VFunction, [IO()] )= (deleteInstruction loadf replU, [printf "%s\n" (show loadf)])
+                    let res :: (VFunction, [IO()] )= (deleteInstruction loadf replU, [])--[printf "%s\n" (show loadf), printf "previous store %s\n" (show valS), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
                     return $ res
                 of
                     Left dbg2 -> (acc,False, dbg ++ dbg2)
@@ -80,7 +81,7 @@ mem2reg_function func =
             --(newFunc, changed0) = (func, False)
             uses :: [Use] = getUses alloca newFunc
             (stores, loads, others) = partitionStoreLoadOther newFunc uses
-            dbg3 = dbg ++ dbg2 ++ [printf "Uses %s | loads=%s\n" (show uses0) (show loads0)]
+            dbg3 = dbg ++ dbg2 -- ++ [printf "Uses %s | loads=%s\n" (show uses0) (show loads0)]
         in
           if (length uses) == (length stores) then
              let nfunc2 = deleteAllUses newFunc alloca

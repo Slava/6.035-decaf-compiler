@@ -7,6 +7,7 @@ import Data.List
 import qualified Data.Map as HashMap
 import qualified LLIR
 import LLIR
+import Text.Printf
 
 data CGContext = CGContext {
   -- label, constant string
@@ -20,14 +21,15 @@ newCGContext :: CGContext
 newCGContext = CGContext [] 0 []
 
 getConstStrId :: FxContext -> String -> (FxContext, String)
-getConstStrId (FxContext name (CGContext strs next globs) table offset) str =
-  (FxContext name newGlobal table offset, id)
-  where id = ".const_str" ++ (show next)
-        newGlobal = CGContext{
-          constStrs = strs ++ [(id, str)],
-          nextConstStrId = next + 1,
-          globalArrays = globs
-        }
+getConstStrId fcx str =
+  let gcx = global fcx
+      next = (nextConstStrId gcx)
+      id = ".const_str" ++ (show next)
+      gcx2 = gcx{
+        constStrs=(constStrs gcx) ++ [(id, str)],
+        nextConstStrId = next + 1
+      }
+      in (fcx{global=gcx2}, id)
 
 addGlobals (CGContext constStrs nextConstStrId globalArrays) globals =
   -- only collects sizes of global arrays so the beginning of main function can set the lengths.
@@ -43,35 +45,38 @@ data FxContext = FxContext {
   global :: CGContext,
   -- variables maps registers to a label/reg + offset
   variables :: HashMap.Map String (String, Int),
-  offset :: Int
+  offset :: Int,
+  instrs :: [String],
+  errors :: [String]
 }
 
 newFxContext :: String -> CGContext -> FxContext
-newFxContext name global = FxContext name global HashMap.empty 8
-
-updateOffset :: FxContext -> FxContext
-updateOffset (FxContext name global table offset) = FxContext name global table $ offset + 8
+newFxContext name global = FxContext name global HashMap.empty 8 [] []
 
 updateOffsetBy :: FxContext -> Int -> FxContext
-updateOffsetBy (FxContext name global table offset) size = FxContext name global table $ offset + size
+updateOffsetBy fcx size = fcx{offset=(offset fcx) + size}
 
+updateOffset :: FxContext -> FxContext
+updateOffset fcx = updateOffsetBy fcx 8
+
+locStr :: (String, Int) -> String
 locStr (place, offset) =
   if offset /= 0 then (show offset) ++ "(" ++ place ++ ")" else place
 
 lookupVariable :: FxContext -> String -> String
-lookupVariable (FxContext _ _ table _) var =
-  if head var == '$' then var else case HashMap.lookup var table of
-                                           Just (place, offset) -> locStr (place, offset)
-                                           Nothing -> "Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table)
+lookupVariable fxc var =
+  let table = (variables fxc) in
+  case head var of
+    '$' -> var
+    _ -> let (place, offset) :: (String, Int) = (HashMap.!) table var  in
+            locStr (place, offset)
 
 lookupVariableWithOffset :: FxContext -> String -> (String, Int)
-lookupVariableWithOffset (FxContext _ _ table _) var =
-  case HashMap.lookup var table of
-    Just loc -> loc
-    Nothing -> ("Couldn't find " ++ var ++ " in " ++ show (HashMap.toList table), 0)
+lookupVariableWithOffset fcx var =
+  let table = variables fcx in (HashMap.!) table var
 
 setVariableLoc :: FxContext -> String -> (String, Int) -> FxContext
-setVariableLoc (FxContext name global table offset) var loc = FxContext name global (HashMap.alter update var table) offset
+setVariableLoc fcx var loc = fcx{variables=HashMap.alter update var (variables fcx)}
   where update _ = Just loc
 
 getHeader :: String
@@ -163,18 +168,17 @@ genFunction cx f =
                    (zip [1..argsLength] $ LLIR.arguments f)
       (ncx2, blocksStr) = foldl
                    (\(cx, s) name ->
-                     let block = HashMap.lookup name $ LLIR.blocks f
+                     let block = (HashMap.!) (LLIR.blocks f) name
                          (ncx, str) = genBlock cx block name f in
                      (ncx, s ++ str))
                    (ncx1, "") $ LLIR.blockOrder f
       strRes = "\n" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
     (global ncx2, strRes)
 
-genBlock :: FxContext -> Maybe LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
-genBlock cx Nothing name _ = (cx, "# no op block. Block " ++ name ++ " wasn't found\n")
-genBlock cx (Just block) name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
+genBlock :: FxContext -> LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
+genBlock cx block name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
   where (ncx, s) = foldl (\(cx, acc) name ->
-          let instruction = HashMap.lookup name $ LLIR.functionInstructions f
+          let instruction = (HashMap.!) (LLIR.functionInstructions f) name
               (ncx, str) = genInstruction cx instruction in
                 (ncx, acc ++ str))
           (cx, "")
@@ -185,10 +189,10 @@ genBlock cx (Just block) name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
 genSetupGlobals cx =
   concat $ map (\(name, size) -> "  movq $" ++ (show size) ++ ", " ++ name ++ "\n") $ globalArrays cx
 
-genInstruction :: FxContext -> Maybe LLIR.VInstruction -> (FxContext, String)
-genInstruction cx Nothing = (cx, "# empty instruction\n")
+arrayToLine :: [String] -> String
+arrayToLine ar = concat $ map (\x -> "  " ++ x ++ "\n") ar
 
-genInstruction cx (Just (VAllocation result tp size)) =
+genInstruction cx (VAllocation result tp size) =
   let s = case size of
                  Just i -> i
                  Nothing -> 0
@@ -211,7 +215,7 @@ genInstruction cx (Just (VAllocation result tp size)) =
          "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
          if s > 0 then ("  movq $" ++ (show s) ++ ", " ++ destination ++ "\n") else "")
 
-genInstruction cx (Just (VUnOp result op val)) =
+genInstruction cx (VUnOp result op val) =
   let loc = snd $ genAccess cx val
       instruction = case op of
         "-" -> "  negq %rax\n"
@@ -224,20 +228,31 @@ genInstruction cx (Just (VUnOp result op val)) =
     instruction ++
     "  movq %rax, " ++ destination ++ "\n")
 
-genInstruction cx (Just (VBinOp result op val1 val2)) =
+genInstruction cx (VBinOp result op val1 val2) =
     let loc1 = snd $ genAccess cx val1
         loc2 = snd $ genAccess cx val2
         stackOffset = (offset cx) * (-1)
         destination = (show stackOffset) ++ "(%rbp)"
         ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
           (ncx,
-          "  movq " ++ loc1 ++ ", %rax\n" ++
-          genOp op loc2 ++
+          (
+            if ((op == "/") || (op == "%")) then
+              -- in A/B require A in rax, rdx empty
+              "  movq " ++ loc1 ++ ", %rax\n" ++
+              let (instA, out) = genOpB op loc2 in
+                (arrayToLine instA) ++ (
+                  if out /= "%rax" then
+                    printf "  movq %s, %s\n" out "%rax"
+                  else ""
+                )
+            else
+            "  movq " ++ loc1 ++ ", %rax\n" ++ ( arrayToLine $ genOp op loc2 "%rax")
+          ) ++
           "  movq %rax, " ++ destination ++ "\n" -- ++
           --"  old cx was: " ++ show (HashMap.toList $ variables cx) ++ ", new cx is: " ++ show (HashMap.toList $ variables ncx)
           )
 
-genInstruction cx (Just (VMethodCall name isCallout fname args)) =
+genInstruction cx (VMethodCall name isCallout fname args) =
   -- push arguments
   let (ncx, nargs) = foldl (\(cx, acc) arg ->
                               let (ncx, narg) = genArg cx arg in
@@ -252,7 +267,7 @@ genInstruction cx (Just (VMethodCall name isCallout fname args)) =
         (updateOffset $ setVariableLoc ncx2 name ("%rbp", stackOffset),
          exitMessage ++ precall ++ cleanRax ++ "  callq " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
-genInstruction cx (Just v@(VStore _ val var)) =
+genInstruction cx (VStore _ val var) =
   let loc1 = snd $ genAccess cx val
       loc2 = snd $ genAccess cx var in
     (cx,
@@ -260,7 +275,7 @@ genInstruction cx (Just v@(VStore _ val var)) =
     "  movq " ++ loc1 ++ ", %rax\n" ++
     "  movq %rax, " ++ loc2 ++ "\n")
 
-genInstruction cx (Just (VLookup result val)) =
+genInstruction cx (VLookup result val) =
   let loc = snd $ genAccess cx val
       stackOffset = (offset cx) * (-1)
       destination = (show stackOffset) ++ "(%rbp)"
@@ -269,7 +284,7 @@ genInstruction cx (Just (VLookup result val)) =
         "  movq " ++ loc ++ ", %rax\n" ++
         "  movq %rax, " ++ destination ++ "\n")
 
-genInstruction cx (Just (VArrayStore _ val arrayRef idxRef)) =
+genInstruction cx (VArrayStore _ val arrayRef idxRef) =
   let arr = case arrayRef of
               InstRef s -> lookupVariable cx s
               GlobalRef s -> ".global_" ++ s
@@ -287,7 +302,7 @@ genInstruction cx (Just (VArrayStore _ val arrayRef idxRef)) =
   "  movq " ++ loc ++ ", %rax\n" ++
   "  movq %rax, (%rbx)\n")
 
-genInstruction cx (Just (VArrayLookup result arrayRef idxRef)) =
+genInstruction cx (VArrayLookup result arrayRef idxRef) =
   let arr = case arrayRef of
               InstRef s -> lookupVariable cx s
               GlobalRef s -> ".global_" ++ s
@@ -306,7 +321,7 @@ genInstruction cx (Just (VArrayLookup result arrayRef idxRef)) =
   "  movq (%rax, %rbx, 8), %rbx\n" ++
   "  movq %rbx, " ++ destination ++ "\n")
 
-genInstruction cx (Just (VArrayLen result ref)) =
+genInstruction cx (VArrayLen result ref) =
      let access = case ref of
             InstRef s -> lookupVariable cx (s ++ "@len")
             GlobalRef s -> ".global_" ++ s
@@ -319,12 +334,12 @@ genInstruction cx (Just (VArrayLen result ref)) =
    "  movq %rax, " ++ destination ++ "\n")
 
 
-genInstruction cx (Just (VReturn _ maybeRef)) =
+genInstruction cx (VReturn _ maybeRef) =
   case maybeRef of
     Just ref -> (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n  leave\n  ret\n")
     Nothing -> (cx, "  leave\n  ret\n")
 
-genInstruction cx (Just (VCondBranch _ cond true false)) =
+genInstruction cx (VCondBranch _ cond true false) =
   let loc = snd $ genAccess cx cond in
     (cx,
     "  movq " ++ loc ++ ", %rax\n" ++
@@ -332,13 +347,13 @@ genInstruction cx (Just (VCondBranch _ cond true false)) =
     "  jnz " ++ name cx ++ "_" ++ true ++ "\n" ++
     "  jz " ++ name cx ++ "_" ++ false ++ "\n")
 
-genInstruction cx (Just (VUnreachable _)) =
+genInstruction cx (VUnreachable _) =
   (cx, "  # unreachable instruction\n")
 
-genInstruction cx (Just (VUncondBranch _ dest)) =
+genInstruction cx (VUncondBranch _ dest) =
   (cx, "  jmp " ++ name cx ++ "_" ++ dest ++ "\n")
 
-genInstruction cx (Just (VZeroInstr _ ref size)) =
+genInstruction cx (VZeroInstr _ ref size) =
   let dest = snd $ genAccess cx ref in
   (cx,
   "  # bzero\n" ++
@@ -355,24 +370,78 @@ genExitMessage cx val = (ncx, "  xorq %rax, %rax\n  movq $" ++ message ++ ", %rd
                             LLIR.ConstInt (-1) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Array out of Bounds access in method \\\"" ++ name cx ++ "\\\"\\n\"")
                             LLIR.ConstInt (-2) -> getConstStrId cx ("\"*** RUNTIME ERROR ***: Method \\\"" ++ name cx ++ "\\\" didn't return\\n\"")
 
-genOp :: String -> String -> String
-genOp "+" loc  = "  addq "  ++ loc ++ ", %rax\n"
-genOp "-" loc  = "  subq "  ++ loc ++ ", %rax\n"
-genOp "*" loc  = "  imulq " ++ loc ++ ", %rax\n"
-genOp "/" loc  = "  movq " ++ loc ++ ", %rbx\n  cqo\n  idivq %rbx\n"
-genOp "%" loc  = "  movq " ++ loc ++ ", %rbx\n  cqo\n  idivq %rbx\n  movq %rdx, %rax\n"
-genOp "==" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setz %al\n"
-genOp "!=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setnz %al\n"
-genOp "<"  loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setl %al\n"
-genOp "<=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setle %al\n"
-genOp ">" loc  = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setg %al\n"
-genOp ">=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setge %al\n"
-genOp "u<"  loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setl %al\n"
-genOp "u<=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setle %al\n"
-genOp "u>" loc  = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setg %al\n"
-genOp "u>=" loc = "  cmpq "   ++ loc ++ ", %rax\n  movq $0, %rax\n  setge %al\n"
-genOp "|" loc = "  orq "    ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
-genOp "&" loc = "  andq "   ++ loc ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
+quadRegToByteReg :: String -> String
+quadRegToByteReg a
+  | a == "%rax" = "%al"
+  | a == "%rbx" = "%bl"
+  | a == "%rcx" = "%cl"
+  | a == "%rdx" = "%dl"
+  | a == "%r8"  = "%r8b"
+  | a == "%r9"  = "%r9b"
+  | a == "%r10" = "%r10b"
+  | a == "%r11" = "%r11b"
+  | a == "%r12" = "%r12b"
+  | a == "%r13" = "%r13b"
+  | a == "%r14" = "%r14b"
+  | a == "%r15" = "%r15b"
+  | a == "%rsp" = "%spl"
+  | a == "%rbp" = "%bpl"
+  | a == "%rsi" = "%sil"
+  | a == "%rsd" = "%dil"
+
+quadRegToWordReg :: String -> String
+quadRegToWordReg a
+  | a == "%rax" = "%eax"
+  | a == "%rbx" = "%ebx"
+  | a == "%rcx" = "%ecx"
+  | a == "%rdx" = "%edx"
+  | a == "%r8"  = "%r8b"
+  | a == "%r9"  = "%r9b"
+  | a == "%r10" = "%r10d"
+  | a == "%r11" = "%r11d"
+  | a == "%r12" = "%r12d"
+  | a == "%r13" = "%r13d"
+  | a == "%r14" = "%r14d"
+  | a == "%r15" = "%r15d"
+  | a == "%rsp" = "%esp"
+  | a == "%rbp" = "%ebp"
+  | a == "%rsi" = "%esi"
+  | a == "%rsd" = "%ed"
+
+zero :: String -> String
+zero reg = printf "xorl %s, %s" reg
+
+-- arg2 must be register, arg1 may be memory
+--          OP -> arg1 -> arg2 / output -> insts
+genOp :: String -> String -> String -> [String]
+-- out is RHS and must be reg/mem, loc is LHS could be immediate/etc
+genOp "+"   loc out = [printf "addq %s, %s" loc out]
+genOp "-"   loc out = [printf "subq %s, %s" loc out]
+genOp "*"   loc out = [printf "imulq %s, %s" loc out]
+
+genOp "=="  loc out = [printf "cmpq %s, %s" loc out, printf "sete %s" $ quadRegToByteReg out,  printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+genOp "!="  loc out = [printf "cmpq %s, %s" loc out, printf "setne %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+
+genOp "<"   loc out = [printf "cmpq %s, %s" loc out, printf "setl %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+genOp "<="  loc out = [printf "cmpq %s, %s" loc out, printf "setle %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+genOp ">"   loc out = [printf "cmpq %s, %s" loc out, printf "setg %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+genOp ">="  loc out = [printf "cmpq %s, %s" loc out, printf "setge %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+
+genOp "u<"  loc out = [printf "cmpq %s, %s" loc out, printf "setb %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+genOp "u<=" loc out = [printf "cmpq %s, %s" loc out, printf "setbe %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+genOp "u>"  loc out = [printf "cmpq %s, %s" loc out, printf "seta %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+genOp "u>=" loc out = [printf "cmpq %s, %s" loc out, printf "setae %s" $ quadRegToByteReg out, printf "movzx %s, %s" (quadRegToByteReg out) (quadRegToWordReg out)]
+
+genOp "|"   loc out = [printf "orq %s, %s" loc out] -- ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
+genOp "&"   loc out = [printf "andq %s, %s" loc out]-- ++ ", %rax\n  cmp %rax, $0\n  movq $0, %rax\n  setnz %al\n"
+
+-- requires RAX, RDX, and divisor
+-- In A/B %rax must contain A, arg2 contains B
+-- returns instructions, output
+-- op arg2
+genOpB :: String -> String -> ([String], String)
+genOpB "/" arg2 = (["cqto", printf "idivq %s" arg2], "%rax")
+genOpB "%" arg2 = (["cqto", printf "idivq %s" arg2], "%rdx")
 
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
 genArg cx x =
