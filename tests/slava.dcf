@@ -1,12 +1,9 @@
 callout printf;
 
 void main() {
-    int i;
-    for (i = 0, 10) {
-        if (i == 2) {
-            break;
-        } else {
-
-        }
+    if (1 < 2) {
+        printf("Hello\n");
+    } else {
+        printf("Goodbye\n");
     }
 }

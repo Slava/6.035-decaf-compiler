@@ -782,10 +782,9 @@ createCondBranch :: ValueRef -> String -> String -> Builder -> (ValueRef, Builde
 createCondBranch cond trueBranch falseBranch builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
-      builder2 :: Builder = appendInstruction (VCondBranch name cond trueBranch falseBranch) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name
-      ctx = location builder2
-      builder3Maybe =
+      ctx = location builder
+      builder2Maybe =
         do
           let fn = (contextFunctionName ctx)
           let blockN = (contextBlockName ctx)
@@ -803,10 +802,12 @@ createCondBranch cond trueBranch falseBranch builder =
           let func3 = func2{blocks=(HashMap.update (\_ -> Just trueBranchBlock2) trueBranch (blocks func2))}
           let func4 = func3{blocks=(HashMap.update (\_ -> Just falseBranchBlock2) falseBranch (blocks func3))}
           let pmod3 = pmod2{functions=(HashMap.update (\_ -> Just func4) fn (functions pmod2))}
-          return $ builder2{pmod=pmod3}
-      in case builder3Maybe of
-          Just builder3 -> (ref, builder3)
-          Nothing -> (ref, builder2)
+          return $ builder{pmod=pmod3}
+      in case builder2Maybe of
+          Just builder2 ->
+            let builder3 :: Builder = appendInstruction (VCondBranch name cond trueBranch falseBranch) builder2
+                in (ref, builder3)
+          Nothing -> (ref, builder)
 
 createUnreachable :: Builder -> (ValueRef, Builder)
 createUnreachable builder =
@@ -823,10 +824,9 @@ createUncondBranch :: String -> Builder -> (ValueRef, Builder)
 createUncondBranch branch builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
-      builder2 :: Builder = appendInstruction (VUncondBranch name branch) builder{pmod=pmod2}
       ref :: ValueRef = InstRef name
-      ctx = location builder2
-      builder3Maybe =
+      ctx = location builder
+      builder2Maybe =
         do
           let fn = (contextFunctionName ctx)
           let blockN = (contextBlockName ctx)
@@ -840,10 +840,12 @@ createUncondBranch branch builder =
           let func2 = func{blocks=(HashMap.update (\_ -> Just block2) blockN (blocks func))}
           let func3 = func2{blocks=(HashMap.update (\_ -> Just branchBlock2) branch (blocks func2))}
           let pmod3 = pmod2{functions=(HashMap.update (\_ -> Just func3) fn (functions pmod2))}
-          return $ builder2{pmod=pmod3}
-      in case builder3Maybe of
-          Just builder3 -> (ref, builder3)
-          Nothing -> (ref, builder2)
+          return $ builder{pmod=pmod3}
+      in case builder2Maybe of
+          Just builder2 ->
+            let builder3 :: Builder = appendInstruction (VUncondBranch name branch) builder2
+                in (ref, builder3)
+          Nothing -> (ref, builder)
 
 createMethodCall :: String -> [ValueRef] -> Builder -> (ValueRef, Builder)
 createMethodCall fname args builder =
