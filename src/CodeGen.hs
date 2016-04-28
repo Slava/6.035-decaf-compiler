@@ -272,10 +272,21 @@ genInstruction cx (VAllocation result tp size) =
         Just i -> setVariableLoc cx (result ++ "@len") (Memory "%rbp" stackOffset)
         Nothing -> cx
       ncx2 = setVariableLoc ncx result (Memory "%rbp" firstOffset)
-      in
-        (updateOffsetBy ncx2 bytes,
-         "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
-         if s > 0 then arrayToLine ( move ("$" ++ (show s)) destination ) else "")
+      ncx3 = updateOffsetBy ncx2 bytes
+      code = "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
+         if s > 0 then arrayToLine ( move ("$" ++ (show s)) destination ) else ""
+      zeroingCode = case size of
+        Just sz ->
+          "  # bzero\n" ++
+          "  cld\n" ++
+          "  leaq " ++ first ++ ", %rdi\n" ++
+          "  movq $" ++ (show sz) ++ ", %rcx\n" ++
+          "  movq $0, %rax\n" ++
+          "  rep stosq\n" ++
+          "  # /bzero\n"
+        Nothing -> "  movq $0, " ++ destination ++ "\n"
+  in
+    (ncx3, code ++ zeroingCode)
 
 genInstruction cx (VUnOp result op val) =
   let loc =  getRef cx val
@@ -407,17 +418,6 @@ genInstruction cx (VUncondBranch result dest) =
               in move val var
         ) phis
       in (cx, arrayToLine $ cors ++ [printf "jmp %s_%s" (name cx) dest ])
-
-genInstruction cx (VZeroInstr _ ref size) =
-  let dest = getRef cx ref in
-  (cx,
-  "  # bzero\n" ++
-  "  cld\n" ++
-  "  leaq " ++ dest ++ ", %rdi\n" ++
-  "  movq $" ++ (show (size `div` 8)) ++ ", %rcx\n" ++
-  "  movq $0, %rax\n" ++
-  "  rep stosq\n" ++
-  "  # /bzero\n")
 
 genExitMessage :: FxContext -> ValueRef -> (FxContext, String)
 genExitMessage cx val = (ncx, "  xorq %rax, %rax\n  movq $" ++ message ++ ", %rdi\n" ++ "  call printf\n")

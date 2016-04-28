@@ -148,7 +148,6 @@ data VInstruction = VUnOp {- name -} String {- operand -} String {- argument nam
                   | VUnreachable String
                   | VUncondBranch String String
                   | VMethodCall String {- is-callout? -} Bool {- fname -} String {- args -} [ValueRef]
-                  | VZeroInstr String {- ref to zero -} ValueRef {- size in bytes -} Int
                   | VPHINode {- name -} String (HashMap.Map {- block predecessor -} String {- value -} ValueRef)
   deriving (Eq, Show);
 
@@ -192,7 +191,6 @@ instance Namable VInstruction where
   getName (VUncondBranch name _) = name
   getName (VMethodCall name _ _ _) = name
   getName (VUnreachable name ) = name
-  getName (VZeroInstr name _ _) = name
   getName (VPHINode name _) = name
 
 instance Value VInstruction where
@@ -218,7 +216,6 @@ instance Value VInstruction where
     | op == "&"  =  TBool
     | op == "|"  =  TBool
   getType _ (VUnreachable _) = TVoid
-  getType _ (VZeroInstr _ _ _) = TVoid
   getType _ (VStore _ toStore _) = TVoid
   getType b (VLookup _ toLookup) =
     case getDerivedType $ getType b toLookup of
@@ -272,7 +269,6 @@ opCount (VReturn _ (Just a)) = 1
 opCount (VReturn _ Nothing) = 0
 opCount (VCondBranch _ _ _ _) = 1
 opCount (VMethodCall _ _ _ vals) = length vals
-opCount (VZeroInstr _ _ _) = 0
 opCount (VPHINode _ valMap) = length (HashMap.elems valMap)
 opCount _ = 0
 
@@ -293,7 +289,6 @@ getOp (VReturn _ val0) 0 = val0
 getOp (VCondBranch _ val0 _ _) 0 = Just val0
 -------- TODO MAKE THE function itself an op!!!
 getOp (VMethodCall _ _ _ vals) i = safeBangBang vals i
-getOp (VZeroInstr _ val0 _) 0 = Just val0
 getOp (VPHINode _ valMap) i = safeBangBang (HashMap.elems valMap) i
 getOp _ _ = Nothing
 
@@ -313,7 +308,6 @@ replaceOp (VArrayLen a _) 0 nval = (VArrayLen a nval)
 replaceOp (VReturn a _) 0 nval = (VReturn a (Just nval))
 replaceOp (VCondBranch a _ b c) 0 nval = (VCondBranch a nval b c)
 replaceOp (VMethodCall a b c vals) i nval = (VMethodCall a b c (take i vals ++ [nval] ++ drop (i + 1) vals))
-replaceOp (VZeroInstr a _ b) 0 nval = (VZeroInstr a nval b)
 replaceOp (VPHINode a valMap) i nval = case (safeBangBang (HashMap.keys valMap) i) of
     Just key -> (VPHINode a $ HashMap.insert key nval valMap)
     Nothing -> (VPHINode a valMap)
@@ -880,7 +874,7 @@ createZeroInstr :: ValueRef -> Int -> Builder -> (ValueRef, Builder)
 createZeroInstr arg size builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
-      builder2 :: Builder = appendInstruction (VZeroInstr name arg size) builder{pmod=pmod2}
+      builder2 :: Builder = builder{pmod=pmod2}
       ref :: ValueRef = InstRef name in
       (ref, builder2)
 
