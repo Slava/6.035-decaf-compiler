@@ -6,7 +6,7 @@ import Prelude
 import Data.List
 import qualified Data.Map as HashMap
 import qualified LLIR
-import LLIR
+import LLIR hiding (blockName)
 import Text.Printf
 
 data CGContext = CGContext {
@@ -15,7 +15,12 @@ data CGContext = CGContext {
   nextConstStrId :: Int,
   -- global arrays with sizes
   globalArrays :: [(String, Int)]
-}
+} deriving(Eq, Show);
+
+--hml :: HashMap.Map A B -> A -> B
+hml a b l = case HashMap.lookup b a of
+  Nothing -> error ( printf "%s: Key %s not in map %s\n" (show l) (show b) (show a) )
+  Just c -> c
 
 newCGContext :: CGContext
 newCGContext = CGContext [] 0 []
@@ -40,18 +45,25 @@ addGlobals (CGContext constStrs nextConstStrId globalArrays) globals =
       l = map (\(name, (_, Just size)) -> (".global_" ++ name, size)) arrays in
   CGContext constStrs nextConstStrId l
 
+data InstLoc = Register  String
+             | Memory    String Int
+             | Immediate Int
+  deriving(Eq, Show);
+
 data FxContext = FxContext {
   name   :: String,
   global :: CGContext,
+  function :: LLIR.VFunction,
+  blockName :: String,
   -- variables maps registers to a label/reg + offset
-  variables :: HashMap.Map String (String, Int),
+  variables :: HashMap.Map String InstLoc,
   offset :: Int,
   instrs :: [String],
   errors :: [String]
-}
+} deriving(Eq, Show);
 
-newFxContext :: String -> CGContext -> FxContext
-newFxContext name global = FxContext name global HashMap.empty 8 [] []
+newFxContext :: String -> CGContext -> LLIR.VFunction -> FxContext
+newFxContext name global func = FxContext name global func "entry" HashMap.empty 0 [] []
 
 updateOffsetBy :: FxContext -> Int -> FxContext
 updateOffsetBy fcx size = fcx{offset=(offset fcx) + size}
@@ -59,23 +71,22 @@ updateOffsetBy fcx size = fcx{offset=(offset fcx) + size}
 updateOffset :: FxContext -> FxContext
 updateOffset fcx = updateOffsetBy fcx 8
 
-locStr :: (String, Int) -> String
-locStr (place, offset) =
-  if offset /= 0 then (show offset) ++ "(" ++ place ++ ")" else place
+locStr :: InstLoc -> String
+locStr (Memory place offset) = (show offset) ++ "(" ++ place ++ ")"
+locStr (Register place) = place
+locStr (Immediate place) = "$" ++ (show place)
+
+getVar :: FxContext -> String -> InstLoc
+getVar fxc var = hml (variables fxc) var "getVar"
 
 lookupVariable :: FxContext -> String -> String
 lookupVariable fxc var =
   let table = (variables fxc) in
   case head var of
     '$' -> var
-    _ -> let (place, offset) :: (String, Int) = (HashMap.!) table var  in
-            locStr (place, offset)
+    _ -> locStr $ hml table var "lookupVariable"
 
-lookupVariableWithOffset :: FxContext -> String -> (String, Int)
-lookupVariableWithOffset fcx var =
-  let table = variables fcx in (HashMap.!) table var
-
-setVariableLoc :: FxContext -> String -> (String, Int) -> FxContext
+setVariableLoc :: FxContext -> String -> InstLoc -> FxContext
 setVariableLoc fcx var loc = fcx{variables=HashMap.alter update var (variables fcx)}
   where update _ = Just loc
 
@@ -104,22 +115,28 @@ getPostCall numArguments =
   popa ++
   "  #/postcall\n"
 
-getProlog :: Int -> Int -> String
-getProlog argsLength localsSize =
-  let argRegs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"] in
+getProlog :: FxContext -> Int -> Int -> String
+getProlog cx argsLength localsSize =
+  let argRegs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+      argz = ( argRegs ++ (map (\i -> (show $ (i - (length argRegs) + 1) * 8) ++ "(%rbp)") (drop 6 [1..argsLength]) ) ) in
   "  #prolog\n" ++
-  "  enter $" ++ (show (argsLength * 16 + localsSize)) ++ ", $0\n" ++
+  "  push %rbp\n" ++
+  "  movq %rsp, %rbp\n" ++
+  "  subq $" ++ (show localsSize) ++ ", %rsp\n" ++
   -- put register arguments to stack
-  unwords (map (\(x, y) -> "  movq " ++ x ++ ", -" ++ (show $ 8 * y) ++ "(%rbp)\n") $ zip argRegs [1..argsLength]) ++
-  -- put stack arguments to stack (again, but after the reg args for easy access)
-  unwords (map (\(revIdx, argIdx) -> "  movq " ++ (show $ (revIdx + 1) * 8) ++ "(%rbp), %rax\n  movq %rax, -" ++ (show $ 8 * argIdx) ++ "(%rbp)\n") $ zip [1..argsLength] (drop 6 [1..argsLength])) ++
-  "  #prolog\n"
+  ( arrayToLine $ concat $ map (\(x, y) ->
+    let fm = x
+        to = getRef cx $ ArgRef (y-1) (name cx)
+        in
+          if fm == to then [] else move x to ) $ zip argz [1..argsLength] )
+  ++ "  #/prolog\n"
 
 getEpilog :: String
 getEpilog =
   " \n" ++
   "  #epilog\n" ++
-  "  leaveq\n" ++
+  "  movq %rbp, %rsp\n" ++
+  "  pop %rbp\n" ++
   "  ret\n" ++
   "  #/epilog\n"
 
@@ -141,56 +158,99 @@ genCallouts callouts =
 closestMultipleOf16 num =
   ((num + 15) `div` 16) * 16
 
+localSize instr =
+  case instr of
+    VStore _ _ _ -> 0
+    VArrayStore _ _ _ _ -> 0
+    VReturn _ _ -> 0
+    VCondBranch _ _ _ _ -> 0
+    VUncondBranch _ _ -> 0
+    VUnreachable _ -> 0
+    VAllocation _ _ (Just x) -> (x + 1) * 8
+    VAllocation _ _ Nothing -> 8
+    _ -> 8
+
 calculateLocalsSize instrs =
-  foldl (+) 0 (map (\instr -> case instr of
-                       VStore _ _ _ -> 0
-                       VArrayStore _ _ _ _ -> 0
-                       VReturn _ _ -> 0
-                       VCondBranch _ _ _ _ -> 0
-                       VUncondBranch _ _ -> 0
-                       VUnreachable _ -> 0
-                       VAllocation _ _ (Just x) -> (x + 1) * 8
-                       VAllocation _ _ Nothing -> 8
-                       _ -> 8
-                       ) instrs)
+  foldl (+) 0 (map localSize instrs)
 
 genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
 genFunction cx f =
   let argsLength = length $ LLIR.arguments f
-      localsSize = calculateLocalsSize $ map snd $ HashMap.toList (LLIR.functionInstructions f)
-      prolog = getProlog argsLength (closestMultipleOf16 localsSize)
-      ncx1 = foldl
-                   (\cx (idx, arg) ->
-                     setVariableLoc cx
+      instrs = HashMap.elems (LLIR.functionInstructions f)
+      nzInst = (filter (\x -> 0 /= (localSize x)) instrs)
+      localsSize = (8*argsLength) + (calculateLocalsSize nzInst)
+      ncx0 = foldl (\cx (idx, arg) ->
+                let sz = 8 in
+                    if idx <= 6 then
+                      updateOffsetBy ( setVariableLoc cx
                                     (LLIR.functionName f ++ "@" ++ show (idx - 1))
-                                    ("%rbp", (-8) * idx))
-                   (newFxContext (LLIR.functionName f) cx)
+                                    (Memory "%rbp" $ ( -((offset cx) + sz)  ) ) ) sz
+                    else setVariableLoc cx
+                                  (LLIR.functionName f ++ "@" ++ show (idx - 1))
+                                  (Memory "%rbp" $ ( (idx - 6) + 2 ) * 6 ) )
+                   (newFxContext (LLIR.functionName f) cx f)
                    (zip [1..argsLength] $ LLIR.arguments f)
+      ncx1 = foldl (\cx arg ->
+                let sz = localSize arg in
+                      updateOffsetBy ( setVariableLoc cx
+                                   (LLIR.getName arg)
+                                   (Memory "%rbp" $ ( -((offset cx) + sz)  ) ) ) sz )
+                  ncx0
+                  nzInst
       (ncx2, blocksStr) = foldl
                    (\(cx, s) name ->
                      let block = (HashMap.!) (LLIR.blocks f) name
-                         (ncx, str) = genBlock cx block name f in
+                         (ncx, str) = genBlock cx{blockName=name} block name f in
                      (ncx, s ++ str))
                    (ncx1, "") $ LLIR.blockOrder f
+      prolog = getProlog ncx2 argsLength (closestMultipleOf16 localsSize)
       strRes = "\n" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ blocksStr ++ getEpilog in
-    (global ncx2, strRes)
+      --if (LLIR.getName f) /= "sum" then
+        (global ncx2, strRes)
+      --else
+      --  error ( printf "ncx0:%s\n\nncx1:%s\n\nncx2:%s\n\n%s" (show ncx0) (show ncx1) (show ncx2) (show (map (\y -> getRef ncx2 $ ArgRef (y-1) (name ncx2) ) [1..argsLength] ) ) )
 
 genBlock :: FxContext -> LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
 genBlock cx block name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
   where (ncx, s) = foldl (\(cx, acc) name ->
           let instruction = (HashMap.!) (LLIR.functionInstructions f) name
               (ncx, str) = genInstruction cx instruction in
-                (ncx, acc ++ str))
+                (ncx, acc ++ ( "# " ++ (show instruction) ++ "\n" ) ++ str))
           (cx, "")
           (LLIR.blockInstructions block)
         blockName = LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block ++ "_PREDS_" ++ (intercalate " " $ LLIR.blockPredecessors block) ++ "_SUCCS_" ++ (intercalate " " $ LLIR.blockSuccessors block)
         setupGlobals = if blockName /= "main_entry" then "" else genSetupGlobals (global cx)
 
 genSetupGlobals cx =
-  concat $ map (\(name, size) -> "  movq $" ++ (show size) ++ ", " ++ name ++ "\n") $ globalArrays cx
+  concat $ map (\(name, size) -> arrayToLine $ move ("$" ++ (show size)) name ) $ globalArrays cx
 
 arrayToLine :: [String] -> String
 arrayToLine ar = concat $ map (\x -> "  " ++ x ++ "\n") ar
+
+genUOp :: String -> String -> String
+genUOp op reg = case op of
+  "-" -> printf "negq %s" reg
+  "!" -> printf "xorq $1, %s" reg
+
+isMemory :: InstLoc -> Bool
+isMemory (Memory _ _ ) = True
+isMemory _ = False
+
+isMemoryS :: String -> Bool
+isMemoryS s = ( (last s) == ')' ) || ( (take (length ".global") s) == ".global" )
+
+isRegisterS :: String -> Bool
+isRegisterS s = (head s) == '%'
+
+move :: String -> String -> [String]
+move loc1 loc2 =
+  if loc1 == loc2 then [] else
+  if (isMemoryS loc1) && (isMemoryS loc2)
+    then [printf "movq %s, %s" loc1 "%rax", printf "movq %s, %s" "%rax" loc2 ]
+    else [printf "movq %s, %s" loc1 loc2]
+
+makeReg :: String -> String -> (String,[String])
+makeReg reg tmp = if isRegisterS reg then (reg, []) else (tmp, move reg tmp)
 
 genInstruction cx (VAllocation result tp size) =
   let s = case size of
@@ -198,59 +258,56 @@ genInstruction cx (VAllocation result tp size) =
                  Nothing -> 0
       -- reserve first 8-byte number to store the length of the array
       bytes = ((s + 1) * 8)
-
+      var = getVar cx result
       -- in case of an array, skip first byte
-      stackOffset = (offset cx) * (-1)
+      stackOffset = case var of
+        Memory loc off -> off
+        _ -> error "badd var for allocation"
       destination = (show stackOffset) ++ "(%rbp)"
       firstOffset = if s > 0 then stackOffset - (bytes - 8) else stackOffset
       first = (show firstOffset) ++ "(%rbp)"
 
       ncx :: FxContext = case size of
         -- if array, store location of its length lookup at the head
-        Just i -> setVariableLoc cx (result ++ "@len") ("%rbp", stackOffset)
+        Just i -> setVariableLoc cx (result ++ "@len") (Memory "%rbp" stackOffset)
         Nothing -> cx
-      ncx2 = setVariableLoc ncx result ("%rbp", firstOffset)
+      ncx2 = setVariableLoc ncx result (Memory "%rbp" firstOffset)
       in
         (updateOffsetBy ncx2 bytes,
          "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
-         if s > 0 then ("  movq $" ++ (show s) ++ ", " ++ destination ++ "\n") else "")
+         if s > 0 then arrayToLine ( move ("$" ++ (show s)) destination ) else "")
 
 genInstruction cx (VUnOp result op val) =
-  let loc = snd $ genAccess cx val
-      instruction = case op of
-        "-" -> "  negq %rax\n"
-        "!" -> "  testq %rax, %rax\n  movq $0, %rax\n  setz %al\n"
-      stackOffset = (offset cx) * (-1)
-      destination = (show stackOffset) ++ "(%rbp)"
-      ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
-    (ncx,
-    "  movq " ++ loc ++ ", %rax\n" ++
-    instruction ++
-    "  movq %rax, " ++ destination ++ "\n")
+  let loc =  getRef cx val
+      var  = getVar cx result
+      vloc = locStr var
+      oploc = case var of
+        Register _ -> vloc
+        _ -> "%rax"
+      insts = move loc oploc ++ [ genUOp op oploc ] ++ move oploc vloc
+      in (cx, arrayToLine insts)
+
+genInstruction cx (VPHINode _ _) = (cx, "")
 
 genInstruction cx (VBinOp result op val1 val2) =
-    let loc1 = snd $ genAccess cx val1
-        loc2 = snd $ genAccess cx val2
-        stackOffset = (offset cx) * (-1)
-        destination = (show stackOffset) ++ "(%rbp)"
-        ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
-          (ncx,
+    let loc1 = getRef cx val1
+        loc2 = getRef cx val2
+        var  = getVar cx result
+        vloc = locStr var
+        oploc = case var of
+          Register _ -> vloc
+          _ -> "%rax"
+        cp = move oploc vloc
+        in (cx,
           (
             if ((op == "/") || (op == "%")) then
               -- in A/B require A in rax, rdx empty
-              "  movq " ++ loc1 ++ ", %rax\n" ++
-              let (instA, out) = genOpB op loc2 in
-                (arrayToLine instA) ++ (
-                  if out /= "%rax" then
-                    printf "  movq %s, %s\n" out "%rax"
-                  else ""
-                )
+              let (instA, out) :: ([String], String) = genOpB op loc1 loc2 in
+                (arrayToLine instA) ++ (arrayToLine $ move out vloc)
             else
-            "  movq " ++ loc1 ++ ", %rax\n" ++ ( arrayToLine $ genOp op loc2 "%rax")
-          ) ++
-          "  movq %rax, " ++ destination ++ "\n" -- ++
-          --"  old cx was: " ++ show (HashMap.toList $ variables cx) ++ ", new cx is: " ++ show (HashMap.toList $ variables ncx)
-          )
+              (arrayToLine $ move loc1 oploc)
+              ++ ( arrayToLine $ genOp op loc2 oploc ) ++ ( arrayToLine cp )
+          ) )
 
 genInstruction cx (VMethodCall name isCallout fname args) =
   -- push arguments
@@ -261,28 +318,19 @@ genInstruction cx (VMethodCall name isCallout fname args) =
       precall = getPreCall nargs
       cleanRax = "  movq $0, %rax\n"
       postcall = getPostCall $ length args
-      stackOffset = (offset cx) * (-1)
-      destination = (show stackOffset) ++ "(%rbp)"
+      destination = locStr $ getVar cx name
       (ncx2, exitMessage) = if fname == "exit" && isCallout then genExitMessage cx (args !! 0) else (ncx, "") in
-        (updateOffset $ setVariableLoc ncx2 name ("%rbp", stackOffset),
-         exitMessage ++ precall ++ cleanRax ++ "  callq " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
+        (ncx2, exitMessage ++ precall ++ cleanRax ++ "  callq " ++ fname ++ "\n  movq %rax, " ++ destination ++ "\n" ++ postcall)
 
 genInstruction cx (VStore _ val var) =
-  let loc1 = snd $ genAccess cx val
-      loc2 = snd $ genAccess cx var in
-    (cx,
-    --show v ++ "\n" ++
-    "  movq " ++ loc1 ++ ", %rax\n" ++
-    "  movq %rax, " ++ loc2 ++ "\n")
+  let loc1 = getRef cx val
+      loc2 = getRef cx var
+      in (cx, arrayToLine $ move loc1 loc2)
 
 genInstruction cx (VLookup result val) =
-  let loc = snd $ genAccess cx val
-      stackOffset = (offset cx) * (-1)
-      destination = (show stackOffset) ++ "(%rbp)"
-      ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
-        (ncx,
-        "  movq " ++ loc ++ ", %rax\n" ++
-        "  movq %rax, " ++ destination ++ "\n")
+  let loc = getRef cx val
+      destination = locStr $ getVar cx result
+      in (cx, arrayToLine $ move loc destination)
 
 genInstruction cx (VArrayStore _ val arrayRef idxRef) =
   let arr = case arrayRef of
@@ -292,8 +340,8 @@ genInstruction cx (VArrayStore _ val arrayRef idxRef) =
       isGlobal = case arrayRef of
         GlobalRef _ -> True
         _ -> False
-      idx = snd $ genAccess cx idxRef
-      loc = snd $ genAccess cx val in
+      idx = getRef cx idxRef
+      loc = getRef cx val in
   (cx,
   "  leaq " ++ arr ++ ", %rax\n" ++
   "  movq " ++ idx ++ ", %rbx\n" ++
@@ -310,11 +358,9 @@ genInstruction cx (VArrayLookup result arrayRef idxRef) =
       isGlobal = case arrayRef of
         GlobalRef _ -> True
         _ -> False
-      idx = snd $ genAccess cx idxRef
-      stackOffset = (offset cx) * (-1)
-      destination = (show stackOffset) ++ "(%rbp)"
-      ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
-  (ncx,
+      idx = getRef cx idxRef
+      destination = locStr $ getVar cx result
+      in (cx,
   "  leaq " ++ arr ++ ", %rax\n" ++
   "  movq " ++ idx ++ ", %rbx\n" ++
   (if isGlobal then "  addq $1, %rbx\n" else "") ++
@@ -326,35 +372,44 @@ genInstruction cx (VArrayLen result ref) =
             InstRef s -> lookupVariable cx (s ++ "@len")
             GlobalRef s -> ".global_" ++ s
             _ -> "bad VArrayLen of " ++ (show ref)
-         stackOffset = (offset cx) * (-1)
-         destination = (show stackOffset) ++ "(%rbp)"
-         ncx = updateOffset $ setVariableLoc cx result ("%rbp", stackOffset) in
-   (ncx,
+         destination = locStr $ getVar cx result
+        in (cx,
    "  movq " ++ access ++ ", %rax\n" ++
    "  movq %rax, " ++ destination ++ "\n")
 
 
 genInstruction cx (VReturn _ maybeRef) =
   case maybeRef of
-    Just ref -> (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n  leave\n  ret\n")
-    Nothing -> (cx, "  leave\n  ret\n")
+    Just ref -> (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n" ++ "  movq %rbp, %rsp\n  pop %rbp\n  ret\n" )
+    Nothing -> (cx,  "  movq %rbp, %rsp\n  pop %rbp\n  ret\n" )
 
-genInstruction cx (VCondBranch _ cond true false) =
-  let loc = snd $ genAccess cx cond in
-    (cx,
-    "  movq " ++ loc ++ ", %rax\n" ++
-    "  testq %rax, %rax\n" ++
-    "  jnz " ++ name cx ++ "_" ++ true ++ "\n" ++
-    "  jz " ++ name cx ++ "_" ++ false ++ "\n")
+-- TODO MOVE CMP / etc
+genInstruction cx (VCondBranch result cond true false) =
+  let loc :: String = getRef cx cond
+      phis = (LLIR.getPHIs (function cx) true) ++ (LLIR.getPHIs (function cx) false)
+      cors = concat $ map (\(VPHINode pname hm) ->
+            let var = locStr $ getVar cx pname
+                val = getRef cx ((HashMap.!) hm (blockName cx) )
+                in move val var
+          ) phis
+      (reg, inst1) :: (String, [String]) = makeReg loc "%rax"
+      insts = inst1 ++ [printf "testq %s, %s" reg reg, printf "jnz %s_%s" (name cx) true, printf "jz %s_%s" (name cx) false]
+      in ( cx, arrayToLine $ cors ++ insts )
 
 genInstruction cx (VUnreachable _) =
   (cx, "  # unreachable instruction\n")
 
-genInstruction cx (VUncondBranch _ dest) =
-  (cx, "  jmp " ++ name cx ++ "_" ++ dest ++ "\n")
+genInstruction cx (VUncondBranch result dest) =
+  let phis = LLIR.getPHIs (function cx) dest
+      cors :: [String] = concat $ map (\(VPHINode pname hm) ->
+          let var = locStr $ getVar cx pname
+              val = getRef cx ((HashMap.!) hm (blockName cx) )
+              in move val var
+        ) phis
+      in (cx, arrayToLine $ cors ++ [printf "jmp %s_%s" (name cx) dest ])
 
 genInstruction cx (VZeroInstr _ ref size) =
-  let dest = snd $ genAccess cx ref in
+  let dest = getRef cx ref in
   (cx,
   "  # bzero\n" ++
   "  cld\n" ++
@@ -439,14 +494,31 @@ genOp "&"   loc out = [printf "andq %s, %s" loc out]-- ++ ", %rax\n  cmp %rax, $
 -- In A/B %rax must contain A, arg2 contains B
 -- returns instructions, output
 -- op arg2
-genOpB :: String -> String -> ([String], String)
-genOpB "/" arg2 = (["cqto", printf "idivq %s" arg2], "%rax")
-genOpB "%" arg2 = (["cqto", printf "idivq %s" arg2], "%rdx")
+genOpB :: String -> String -> String -> ([String], String)
+genOpB "/" arg1 arg2 = ((move arg1 "%rax") ++ ["cqto", printf "idivq %s" arg2], "%rax")
+genOpB "%" arg1 arg2 = ((move arg1 "%rax") ++ ["cqto", printf "idivq %s" arg2], "%rdx")
 
 genArg :: FxContext -> ValueRef -> (FxContext, (String, Int))
 genArg cx x =
   let (ncx, asm) = genAccess cx x in
   (ncx, (asm, 8))
+
+getRef :: FxContext -> ValueRef -> String
+getRef cx (InstRef ref) = lookupVariable cx ref
+
+getRef cx (ConstInt i)  = "$" ++ (show i)
+
+getRef cx (ConstString s) =
+  let (ncx, id) = getConstStrId cx s in
+    "$" ++ id
+
+getRef cx (ConstBool b) = "$" ++ (if b then "1" else "0")
+
+getRef cx (ArgRef i funcName) =
+  if i < 6 then lookupVariable cx $ funcName ++ "@" ++ (show i) else (show $ 16 + 8 * (i - 6)) ++ "(%rbp)"
+
+getRef cx (GlobalRef name) =
+  ".global_" ++ name
 
 genAccess :: FxContext -> ValueRef -> (FxContext, String)
 genAccess cx (InstRef ref) =

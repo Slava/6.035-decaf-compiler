@@ -152,6 +152,8 @@ data VInstruction = VUnOp {- name -} String {- operand -} String {- argument nam
                   | VPHINode {- name -} String (HashMap.Map {- block predecessor -} String {- value -} ValueRef)
   deriving (Eq, Show);
 
+getPHIMap (VPHINode _ a) = a
+
 getLastStore :: VInstruction -> [VInstruction] -> Maybe VInstruction
 getLastStore instr instrs =
     let instrRef = InstRef $ getName instr
@@ -380,12 +382,20 @@ getUses inst func =
           if inst == ninst then Just mval else Nothing
       in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
 
+getPHIs :: VFunction -> String -> [VInstruction]
+getPHIs fun blk =
+  let instmap = functionInstructions fun
+      insts = map (\x -> (HashMap.!) instmap x ) $ blockInstructions $ ((HashMap.!) (blocks fun) blk)
+      in filter (\x -> case x of
+        VPHINode _ _ -> True
+        _ -> False) insts
+
 getAllocas :: VFunction -> [VInstruction]
 getAllocas fun =
   let instmap = functionInstructions fun
       insts = HashMap.elems instmap
       in filter (\x -> case x of
-        VAllocation _ _ _ -> True
+        VAllocation _ _ z -> (z == Nothing)
         _ -> False) insts
 
 data VCallout = VCallout String
