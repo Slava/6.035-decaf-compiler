@@ -162,6 +162,7 @@ localSize instr =
   case instr of
     VStore _ _ _ -> 0
     VArrayStore _ _ _ _ -> 0
+    VZeroInstr _ _ _ -> 0
     VReturn _ _ -> 0
     VCondBranch _ _ _ _ -> 0
     VUncondBranch _ _ -> 0
@@ -192,6 +193,7 @@ genFunction cx f =
                    (zip [1..argsLength] $ LLIR.arguments f)
       ncx1 = foldl (\cx arg ->
                 let sz = localSize arg in
+		
                       updateOffsetBy ( setVariableLoc cx
                                    (LLIR.getName arg)
                                    (Memory "%rbp" $ ( -((offset cx) + sz)  ) ) ) sz )
@@ -208,7 +210,7 @@ genFunction cx f =
       --if (LLIR.getName f) /= "sum" then
         (global ncx2, strRes)
       --else
-      --  error ( printf "ncx0:%s\n\nncx1:%s\n\nncx2:%s\n\n%s" (show ncx0) (show ncx1) (show ncx2) (show (map (\y -> getRef ncx2 $ ArgRef (y-1) (name ncx2) ) [1..argsLength] ) ) )
+        --error ( printf "ncx0:%s\n\nncx1:%s\n\nncx2:%s\n\n%s" (show ncx0) (show ncx1) (show ncx2) (show (map (\y -> getRef ncx2 $ ArgRef (y-1) (name ncx2) ) [1..argsLength] ) ) )
 
 genBlock :: FxContext -> LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
 genBlock cx block name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
@@ -257,25 +259,22 @@ genInstruction cx (VAllocation result tp size) =
                  Just i -> i
                  Nothing -> 0
       -- reserve first 8-byte number to store the length of the array
-      bytes = ((s + 1) * 8)
-      var = getVar cx result
+      var = getVar cx (result)
       -- in case of an array, skip first byte
       stackOffset = case var of
         Memory loc off -> off
         _ -> error "badd var for allocation"
       destination = (show stackOffset) ++ "(%rbp)"
-      firstOffset = if s > 0 then stackOffset - (bytes - 8) else stackOffset
-      first = (show firstOffset) ++ "(%rbp)"
 
       ncx :: FxContext = case size of
         -- if array, store location of its length lookup at the head
-        Just i -> setVariableLoc cx (result ++ "@len") (Memory "%rbp" stackOffset)
+        Just i -> 
+		let cx2 = setVariableLoc cx (result) (Memory "%rbp" $ stackOffset + 8)
+                    cx3 = setVariableLoc cx2 (result ++ "@len" ) (Memory "%rbp" $ stackOffset)
+                    in cx3
         Nothing -> cx
-      ncx2 = setVariableLoc ncx result (Memory "%rbp" firstOffset)
-      in
-        (updateOffsetBy ncx2 bytes,
-         "  # allocate " ++ (show bytes) ++ " bytes on stack\n" ++
-         if s > 0 then arrayToLine ( move ("$" ++ (show s)) destination ) else "")
+      ncx2 = ncx
+      in (ncx2, if s > 0 then arrayToLine ( move ("$" ++ (show s)) destination ) else "")
 
 genInstruction cx (VUnOp result op val) =
   let loc =  getRef cx val

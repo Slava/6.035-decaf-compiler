@@ -3,7 +3,7 @@ all:
 
 test:	all
 	./tests/tests/codegen/test.sh
-	./tests/tests/codegen-hidden/test.sh
+		./tests/tests/codegen-hidden/test.sh
 
 #FILE=./tests/tests/codegen/input/02-expr.dcf
 #FILE=./tests/tests/codegen-hidden/input/hidden-17-divide.dcf
@@ -13,6 +13,8 @@ FILE=./tests/tests/codegen/input/04-math2.dcf
 FILE=./tests/tests/codegen/input/05-calls.dcf
 FILE=./tests/tests/codegen/input/09-global.dcf
 FILE=./tests/tests/codegen/input/16-qsort.dcf
+FILE=./tests/tests/codegen-hidden/input/hidden-23-nested.dcf
+FILE=./psum.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t opt $(FILE)
