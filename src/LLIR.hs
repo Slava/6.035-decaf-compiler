@@ -430,7 +430,7 @@ getInstructionParent func instr =
             _ -> ""
 
 blockToString :: (HashMap.Map String VInstruction) -> VBlock -> String
-blockToString hm (VBlock _ name instr) =
+blockToString hm (VBlock _ name instr _ _) =
   " " ++ name ++ ":\n" ++ (foldl (\acc x -> acc ++ "    " ++ (
         case HashMap.lookup x hm of
           Just a -> x ++ " = " ++ (show a) ++ "\n"
@@ -459,7 +459,9 @@ instance Namable VFunction where
 data VBlock            = VBlock {
   blockFunctionName :: String,
   blockName         :: String,
-  blockInstructions :: [String]
+  blockInstructions :: [String],
+  blockPredecessors :: [String],
+  blockSuccessors   :: [String]
 } deriving (Eq, Show);
 
 instance Namable VBlock where
@@ -544,7 +546,7 @@ instance Locationable Context where
   setInsertionPoint ctx builder = builder{location=ctx}
 
 appendToBlock :: VInstruction -> VBlock -> VBlock
-appendToBlock instr (VBlock a b instructions) = VBlock a b (instructions ++ [getName instr])
+appendToBlock instr (VBlock a b instructions c d) = VBlock a b (instructions ++ [getName instr]) c d
 
 appendInstruction :: VInstruction -> Builder -> Builder
 appendInstruction instr builderm =
@@ -771,8 +773,30 @@ createCondBranch cond trueBranch falseBranch builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
       builder2 :: Builder = appendInstruction (VCondBranch name cond trueBranch falseBranch) builder{pmod=pmod2}
-      ref :: ValueRef = InstRef name in
-      (ref, builder2)
+      ref :: ValueRef = InstRef name
+      ctx = location builder2
+      builder3Maybe =
+        do
+          let fn = (contextFunctionName ctx)
+          let blockN = (contextBlockName ctx)
+          func <- HashMap.lookup fn (functions pmod2)
+          block <- HashMap.lookup blockN (blocks func)
+          trueBranchBlock <- HashMap.lookup trueBranch (blocks func)
+          falseBranchBlock <- HashMap.lookup falseBranch (blocks func)
+          let trueBranchBlockPreds = (blockPredecessors trueBranchBlock) ++ [blockN]
+          let falseBranchBlockPreds = (blockPredecessors falseBranchBlock) ++ [blockN]
+          let trueBranchBlock2 = trueBranchBlock{blockPredecessors=trueBranchBlockPreds}
+          let falseBranchBlock2 = falseBranchBlock{blockPredecessors=falseBranchBlockPreds}
+          let blockSuccs = (blockSuccessors block) ++ [trueBranch, falseBranch]
+          let block2 = block{blockSuccessors=blockSuccs}
+          let func2 = func{blocks=(HashMap.update (\_ -> Just block2) blockN (blocks func))}
+          let func3 = func2{blocks=(HashMap.update (\_ -> Just trueBranchBlock2) trueBranch (blocks func2))}
+          let func4 = func3{blocks=(HashMap.update (\_ -> Just falseBranchBlock2) falseBranch (blocks func3))}
+          let pmod3 = pmod2{functions=(HashMap.update (\_ -> Just func4) fn (functions pmod2))}
+          return $ builder2{pmod=pmod3}
+      in case builder3Maybe of
+          Just builder3 -> (ref, builder3)
+          Nothing -> (ref, builder2)
 
 createUnreachable :: Builder -> (ValueRef, Builder)
 createUnreachable builder =
@@ -790,8 +814,26 @@ createUncondBranch branch builder =
   let pmod1 = pmod builder
       (name, pmod2) :: (String, PModule) = createID pmod1
       builder2 :: Builder = appendInstruction (VUncondBranch name branch) builder{pmod=pmod2}
-      ref :: ValueRef = InstRef name in
-      (ref, builder2)
+      ref :: ValueRef = InstRef name
+      ctx = location builder2
+      builder3Maybe =
+        do
+          let fn = (contextFunctionName ctx)
+          let blockN = (contextBlockName ctx)
+          func <- HashMap.lookup fn (functions pmod2)
+          block <- HashMap.lookup blockN (blocks func)
+          branchBlock <- HashMap.lookup branch (blocks func)
+          let branchBlockPreds = (blockPredecessors branchBlock) ++ [blockN]
+          let branchBlock2 = branchBlock{blockPredecessors=branchBlockPreds}
+          let blockSuccs = (blockSuccessors block) ++ [branch]
+          let block2 = block{blockSuccessors=blockSuccs}
+          let func2 = func{blocks=(HashMap.update (\_ -> Just block2) blockN (blocks func))}
+          let func3 = func2{blocks=(HashMap.update (\_ -> Just branchBlock2) branch (blocks func2))}
+          let pmod3 = pmod2{functions=(HashMap.update (\_ -> Just func3) fn (functions pmod2))}
+          return $ builder2{pmod=pmod3}
+      in case builder3Maybe of
+          Just builder3 -> (ref, builder3)
+          Nothing -> (ref, builder2)
 
 createMethodCall :: String -> [ValueRef] -> Builder -> (ValueRef, Builder)
 createMethodCall fname args builder =
@@ -820,7 +862,7 @@ createZeroInstr arg size builder =
 createBlockF :: String -> VFunction -> VFunction
 createBlockF str func =
   let str2 = uniqueBlockName str func
-      block = VBlock (functionName func) str2 []
+      block = VBlock (functionName func) str2 [] [] []
       in func {blocks = HashMap.insert str2 block $ blocks func, blockOrder=(blockOrder func)++[str2]}
 
 removeEmptyBlock :: String -> Builder -> Builder
@@ -848,7 +890,7 @@ createBlock str builder =
           let fn = contextFunctionName context
           func <- HashMap.lookup fn (functions pmod1)
           let str2 = uniqueBlockName str func
-          block <- return $ VBlock fn str2 []
+          block <- return $ VBlock fn str2 [] [] []
           let oldBlocks = blocks func
           let newBlocks = HashMap.insert str2 block oldBlocks
           func2 <- return $ func{blocks=newBlocks, blockOrder=(blockOrder func)++[str2]}

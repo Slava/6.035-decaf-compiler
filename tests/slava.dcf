@@ -1,8 +1,12 @@
 callout printf;
 
 void main() {
-    int x;
-    int y;
-	x = 10;
-    printf("%d\n", x);
+    int i;
+    for (i = 0, 10) {
+        if (i == 2) {
+            break;
+        } else {
+
+        }
+    }
 }
