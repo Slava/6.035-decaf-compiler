@@ -162,7 +162,6 @@ localSize instr =
   case instr of
     VStore _ _ _ -> 0
     VArrayStore _ _ _ _ -> 0
-    VZeroInstr _ _ _ -> 0
     VReturn _ _ -> 0
     VCondBranch _ _ _ _ -> 0
     VUncondBranch _ _ -> 0
@@ -210,7 +209,7 @@ genFunction cx f =
       --if (LLIR.getName f) /= "sum" then
         (global ncx2, strRes)
       --else
-        --error ( printf "ncx0:%s\n\nncx1:%s\n\nncx2:%s\n\n%s" (show ncx0) (show ncx1) (show ncx2) (show (map (\y -> getRef ncx2 $ ArgRef (y-1) (name ncx2) ) [1..argsLength] ) ) )
+        --error ( printf "localsSize:%s\n\nncx0:%s\n\nncx1:%s\n\nncx2:%s\n\n%s" (show localsSize) (show ncx0) (show ncx1) (show ncx2) (show (map (\y -> getRef ncx2 $ ArgRef (y-1) (name ncx2) ) [1..argsLength] ) ) )
 
 genBlock :: FxContext -> LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
 genBlock cx block name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
@@ -259,7 +258,7 @@ genInstruction cx (VAllocation result tp size) =
                  Just i -> i
                  Nothing -> 0
       -- reserve first 8-byte number to store the length of the array
-      var = getVar cx (result)
+      var = getVar cx result
       -- in case of an array, skip first byte
       stackOffset = case var of
         Memory loc off -> off
@@ -268,13 +267,23 @@ genInstruction cx (VAllocation result tp size) =
 
       ncx :: FxContext = case size of
         -- if array, store location of its length lookup at the head
-        Just i -> 
+        Just i ->
 		let cx2 = setVariableLoc cx (result) (Memory "%rbp" $ stackOffset + 8)
                     cx3 = setVariableLoc cx2 (result ++ "@len" ) (Memory "%rbp" $ stackOffset)
                     in cx3
         Nothing -> cx
       ncx2 = ncx
-      in (ncx2, if s > 0 then arrayToLine ( move ("$" ++ (show s)) destination ) else "")
+      zeroingCode = case size of
+        Just sz ->
+          "  # bzero\n" ++
+          "  cld\n" ++
+          "  leaq " ++ (locStr $ getVar ncx2 result ) ++ ", %rdi\n" ++
+          "  movq $" ++ (show sz) ++ ", %rcx\n" ++
+          "  movq $0, %rax\n" ++
+          "  rep stosq\n" ++
+          "  # /bzero\n"
+        Nothing -> ""
+      in (ncx2, (if s > 0 then arrayToLine ( move ("$" ++ (show s)) destination ) else "") ++ zeroingCode )
 
 genInstruction cx (VUnOp result op val) =
   let loc =  getRef cx val
@@ -406,17 +415,6 @@ genInstruction cx (VUncondBranch result dest) =
               in move val var
         ) phis
       in (cx, arrayToLine $ cors ++ [printf "jmp %s_%s" (name cx) dest ])
-
-genInstruction cx (VZeroInstr _ ref size) =
-  let dest = getRef cx ref in
-  (cx,
-  "  # bzero\n" ++
-  "  cld\n" ++
-  "  leaq " ++ dest ++ ", %rdi\n" ++
-  "  movq $" ++ (show (size `div` 8)) ++ ", %rcx\n" ++
-  "  movq $0, %rax\n" ++
-  "  rep stosq\n" ++
-  "  # /bzero\n")
 
 genExitMessage :: FxContext -> ValueRef -> (FxContext, String)
 genExitMessage cx val = (ncx, "  xorq %rax, %rax\n  movq $" ++ message ++ ", %rdi\n" ++ "  call printf\n")
