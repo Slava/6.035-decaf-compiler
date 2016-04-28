@@ -284,7 +284,7 @@ genInstruction cx (VAllocation result tp size) =
           "  movq $0, %rax\n" ++
           "  rep stosq\n" ++
           "  # /bzero\n"
-        Nothing -> "  movq $0, " ++ destination ++ "\n"
+        Nothing -> ""
   in
     (ncx3, code ++ zeroingCode)
 
