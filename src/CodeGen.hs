@@ -218,7 +218,7 @@ genBlock cx block name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
                 (ncx, acc ++ ( "# " ++ (show instruction) ++ "\n" ) ++ str))
           (cx, "")
           (LLIR.blockInstructions block)
-        blockName = LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block ++ "_PREDS_" ++ (intercalate " " $ LLIR.blockPredecessors block) ++ "_SUCCS_" ++ (intercalate " " $ LLIR.blockSuccessors block)
+        blockName = LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block
         setupGlobals = if blockName /= "main_entry" then "" else genSetupGlobals (global cx)
 
 genSetupGlobals cx =
