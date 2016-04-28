@@ -663,9 +663,9 @@ maybeIntToInt val = case val of
   Just v  -> v
 
 zeroMemory :: (ValueRef, Builder) -> VType -> Maybe Int-> Builder
-zeroMemory (mem,builder) typ val =
+zeroMemory (mem,builder) typ val = 
   case val of
-    Nothing ->
+    Nothing ->  
       case typ of
          TInt   -> snd $ createStore (ConstInt  0) mem builder
          TBool  -> snd $ createStore (ConstBool False) mem builder
@@ -677,7 +677,7 @@ zeroMemory (mem,builder) typ val =
 createZeroAlloca :: VType -> Maybe Int -> Builder -> (ValueRef, Builder)
 createZeroAlloca op len builder0 =
   let (ref, builder) = createAlloca op len builder0
-      builder2 = zeroMemory (ref, builder) op len
+      builder2 = zeroMemory (ref, builder) op len 
       in (ref, builder2)
 
 createStore :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
@@ -722,37 +722,29 @@ createArrayLen array builder =
 
 createBoundedArrayLookup :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
 createBoundedArrayLookup array index ar1 =
-  let (len, ar2)        = createArrayLen array ar1
-      (inBounds, ar3)   = createBinOp "u<" index len ar2
-      (inBounds2, ar4)  = createBinOp ">=" index (ConstInt 0) ar3
-      (goodBlock, ar5)  = createBlock "inbounds" ar4
-      (goodBlock2, ar6) = createBlock "inbounds2" ar5
-      (badBlock, ar7)   = createBlock "outbounds" ar6
-      (_, ar8)          = createCondBranch inBounds goodBlock badBlock ar7
-      ar9               = setInsertionPoint goodBlock ar8
-      (_, ar10)         = createCondBranch inBounds2 goodBlock2 badBlock ar9
-      ar11              = setInsertionPoint badBlock ar10
-      ar12              = createExit (-1) ar11
-      (_, ar13)         = createUnreachable ar12
-      ar14              = setInsertionPoint goodBlock2 ar13
-      in createArrayLookup array index ar14
+  let (len, ar2)      = createArrayLen array ar1
+      (inBounds, ar3) = createBinOp "u<" index len ar2
+      (goodBlock,ar4) = createBlock "inbounds" ar3
+      (badBlock,ar5)  = createBlock "outbounds" ar4
+      (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
+      ar7             = setInsertionPoint badBlock ar6
+      ar8             = createExit (-1) ar7
+      (_,ar9)         = createUnreachable ar8
+      ar10            = setInsertionPoint goodBlock ar9
+      in createArrayLookup array index ar10
 
 createBoundedArrayStore :: ValueRef -> ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)
 createBoundedArrayStore toStore array index ar1 =
-  let (len, ar2)        = createArrayLen array ar1
-      (inBounds, ar3)   = createBinOp "u<" index len ar2
-      (inBounds2, ar4)  = createBinOp ">=" index (ConstInt 0) ar3
-      (goodBlock, ar5)  = createBlock "inbounds" ar4
-      (goodBlock2, ar6) = createBlock "inbounds2" ar5
-      (badBlock, ar7)   = createBlock "outbounds" ar6
-      (_, ar8)          = createCondBranch inBounds goodBlock badBlock ar7
-      ar9               = setInsertionPoint goodBlock ar8
-      (_, ar10)         = createCondBranch inBounds2 goodBlock2 badBlock ar9
-      ar11              = setInsertionPoint badBlock ar10
-      ar12              = createExit (-1) ar11
-      (_, ar13)         = createUnreachable ar12
-      ar14              = setInsertionPoint goodBlock2 ar13
-      in createArrayStore toStore array index ar14
+  let (len, ar2)      = createArrayLen array ar1
+      (inBounds, ar3) = createBinOp "u<" index len ar2
+      (goodBlock,ar4) = createBlock "inbounds" ar3
+      (badBlock,ar5)  = createBlock "outbounds" ar4
+      (_,ar6)         = createCondBranch inBounds goodBlock badBlock ar5
+      ar7             = setInsertionPoint badBlock ar6
+      ar8             = createExit (-1) ar7
+      (_,ar9)         = createUnreachable ar8
+      ar10            = setInsertionPoint goodBlock ar9
+      in createArrayStore toStore array index ar10
 
 
 createReturn :: Maybe ValueRef -> Builder -> (ValueRef, Builder)
