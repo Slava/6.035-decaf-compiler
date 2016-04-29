@@ -3,6 +3,7 @@ module OPT where
 
 import Data.List
 import qualified Data.Map as HashMap
+import qualified Data.Set as Set
 import qualified LLIR
 import LLIR
 import Text.Printf
@@ -122,3 +123,40 @@ getPreviousStore func alloca instr =
                     Just a -> unsafeElemIndex a prevInstrs < unsafeElemIndex prevStore prevInstrs
              then Right True else Left []--[printf "bad instruction between load/store %s :(\n" (show prevOther)]
         return prevStore
+
+blockDominatorsCompute :: HashMap.Map String (Set.Set String) -> VFunction -> HashMap.Map String (Set.Set String)
+blockDominatorsCompute state func =
+  let blcks = blocks func
+      newState :: HashMap.Map String (Set.Set String) = HashMap.foldl
+       (\accState block ->
+         let bn = blockName block in
+         if bn == "entry" then accState else
+           let updatedDomSet =
+                 foldl (\domSet predName ->
+                          let predDom = HashMap.lookup predName accState in
+                          case predDom of
+                            Just set -> domSet `Set.intersection` set
+                            Nothing -> domSet)
+                 (HashMap.keysSet blcks) (blockPredecessors block)
+           in
+             HashMap.insert bn (updatedDomSet `Set.union` (Set.singleton bn)) accState
+       )
+       state blcks
+  in
+    if state /= newState
+    then blockDominatorsCompute newState func
+    else state
+
+blockDominators :: VFunction -> HashMap.Map String (Set.Set String)
+blockDominators func =
+  let initState :: HashMap.Map String (Set.Set String) =
+        HashMap.foldl
+        (\acc block ->
+          let set = if (blockName block) == "entry"
+                    then (Set.singleton (blockName block))
+                    else (HashMap.keysSet (blocks func))
+          in
+            HashMap.insert (blockName block) set acc)
+        HashMap.empty (blocks func)
+  in
+    blockDominatorsCompute initState func

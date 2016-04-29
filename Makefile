@@ -13,8 +13,8 @@ FILE=./tests/tests/codegen/input/04-math2.dcf
 FILE=./tests/tests/codegen/input/05-calls.dcf
 FILE=./tests/tests/codegen/input/09-global.dcf
 FILE=./tests/tests/codegen/input/16-qsort.dcf
-FILE=./tests/tests/codegen-hidden/input/hidden-23-nested.dcf
-FILE=./psum.dcf
+#FILE=./tests/tests/codegen-hidden/input/hidden-23-nested.dcf
+#FILE=./psum.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t opt $(FILE)
