@@ -11,7 +11,7 @@ import Text.Printf
 
 data CGContext = CGContext {
   -- label, constant string
-  constStrs :: [(String, String)],
+  constStrs :: HashMap.Map String String,
   nextConstStrId :: Int,
   -- global arrays with sizes
   globalArrays :: [(String, Int)]
@@ -23,18 +23,22 @@ hml a b l = case HashMap.lookup b a of
   Just c -> c
 
 newCGContext :: CGContext
-newCGContext = CGContext [] 0 []
+newCGContext = CGContext (HashMap.empty) 0 []
 
 getConstStrId :: FxContext -> String -> (FxContext, String)
 getConstStrId fcx str =
   let gcx = global fcx
-      next = (nextConstStrId gcx)
-      id = ".const_str" ++ (show next)
-      gcx2 = gcx{
-        constStrs=(constStrs gcx) ++ [(id, str)],
-        nextConstStrId = next + 1
-      }
-      in (fcx{global=gcx2}, id)
+      strs = constStrs gcx
+      in case HashMap.lookup str strs of
+	Just name -> (fcx, name)
+        Nothing ->
+          let next = (nextConstStrId gcx)
+              id = ".const_str" ++ (show next)
+              gcx2 = gcx{
+                constStrs= HashMap.insert str id strs,
+                nextConstStrId = next + 1
+              }
+              in (fcx{global=gcx2}, id)
 
 addGlobals (CGContext constStrs nextConstStrId globalArrays) globals =
   -- only collects sizes of global arrays so the beginning of main function can set the lengths.
@@ -539,7 +543,7 @@ genAccess cx (GlobalRef name) =
 
 genConstants cx =
   ".section .rodata\n" ++
-  foldl (\str (label, cnst) ->
+  HashMap.foldWithKey (\cnst label str->
           str ++ "\n" ++ label ++ ":\n  .string " ++ cnst) "" (constStrs cx)
 
 
