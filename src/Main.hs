@@ -35,6 +35,7 @@ import qualified Scanner
 import qualified SemanticChecker
 import qualified CodeGen
 import qualified OPT
+import qualified RegAlloc
 
 import qualified LLIR
 
