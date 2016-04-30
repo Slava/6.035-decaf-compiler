@@ -36,12 +36,12 @@ colorNode (Node n _ _) c = Node n (Just c) False
 data Graph = Graph {
   matrix :: Seq (Seq Bool),
   list :: Seq (Seq Node),
-  nodes :: Seq Bool
-  colors :: Seq Int
+  nodes :: Seq Bool,
+  colors :: Seq (Maybe Int)
 } deriving Show
 
 initGraph :: Int -> Graph
-initGraph n = Graph (Data.Sequence.replicate n (Data.Sequence.replicate n False)) (Data.Sequence.replicate n Data.Sequence.empty) (Data.Sequence.replicate n True) (Data.Sequence.replicate n -1)
+initGraph n = Graph (Data.Sequence.replicate n (Data.Sequence.replicate n False)) (Data.Sequence.replicate n Data.Sequence.empty) (Data.Sequence.replicate n True) (Data.Sequence.replicate n Nothing)
 
 numNodes :: Graph -> Int
 numNodes g = Data.Sequence.length . Data.Sequence.filter (\x -> x) $ nodes g
