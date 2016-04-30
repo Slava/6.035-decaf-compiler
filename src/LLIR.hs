@@ -349,6 +349,9 @@ deleteAllUses sfunc instr =
 getUseInstr :: VFunction -> Use -> Maybe VInstruction
 getUseInstr func use = HashMap.lookup (useInstruction use) (functionInstructions func)
 
+getUseInstr2 :: VFunction -> Use -> VInstruction
+getUseInstr2 func use = (HashMap.!) (functionInstructions func) (useInstruction use)
+
 getUseValue :: VFunction -> Use -> Maybe ValueRef
 getUseValue func use =
     do
@@ -375,6 +378,17 @@ getUses inst func =
             _ -> Nothing
           if inst == ninst then Just mval else Nothing
       in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
+
+instCast :: VFunction -> ValueRef -> Maybe VInstruction
+instCast f (InstRef a) = HashMap.lookup a (functionInstructions f)
+instCast _ _  = Nothing
+
+noMaybe :: Maybe a -> a
+noMaybe (Just a) = a
+noMaybe Nothing = error "bad maybe"
+
+instCastU :: VFunction -> ValueRef -> VInstruction
+instCastU f i = noMaybe $ instCast f i
 
 getPHIs :: VFunction -> String -> [VInstruction]
 getPHIs fun blk =

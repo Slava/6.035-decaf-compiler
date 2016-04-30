@@ -180,7 +180,7 @@ calculateLocalsSize instrs =
 genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
 genFunction cx f =
   let argsLength = length $ LLIR.arguments f
-      instrs = HashMap.elems (LLIR.functionInstructions f)
+      instrs = concat $ map (\x -> snd $ getBlockInstrs f $ (HashMap.!) (LLIR.blocks f) x ) (LLIR.blockOrder f)
       nzInst = (filter (\x -> 0 /= (localSize x)) instrs)
       localsSize = (8*argsLength) + (calculateLocalsSize nzInst)
       ncx0 = foldl (\cx (idx, arg) ->
@@ -215,16 +215,81 @@ genFunction cx f =
       --else
         --error ( printf "localsSize:%s\n\nncx0:%s\n\nncx1:%s\n\nncx2:%s\n\n%s" (show localsSize) (show ncx0) (show ncx1) (show ncx2) (show (map (\y -> getRef ncx2 $ ArgRef (y-1) (name ncx2) ) [1..argsLength] ) ) )
 
+getBlockInstrs :: LLIR.VFunction -> LLIR.VBlock -> (Bool,[LLIR.VInstruction])
+getBlockInstrs f block =
+  let instructions :: [String] = LLIR.blockInstructions block
+      term = last instructions
+      termI = instCastU f $ InstRef term
+      instructions2 :: [String] = case termI of 
+        VCondBranch _ _ _ _ -> filter (\x -> case do
+            inst <- instCast f $ InstRef x
+            _ <- case inst of
+              VBinOp _ op _ _ -> if elem op ["<","<=",">",">=","u<","u<=","u>","u>=","==","!="] then Just True else Nothing
+              _ -> Nothing
+            uses <- return $ getUses inst f
+            _ <- if 1 == length uses then Just True else Nothing
+            if ( getName $ getUseInstr2 f (uses !! 0) ) == term then Just True else Nothing
+          of
+            Just _ -> False
+            _ -> True
+          ) instructions
+        _ -> instructions
+      instrs = map (\x -> instCastU f $ InstRef x) instructions2
+      in ( (length instructions)/=(length instructions2), instrs )
+
+makeOneReg :: String -> String -> String -> (String,String,[String])
+makeOneReg a b c = if (isMemoryS a) && (isMemoryS b) then (c,b,move a c) else (a,b,[])
+
+swapBinop :: String -> String
+swapBinop a
+  | a == "==" = "=="
+  | a == "!=" = "!="
+  | a == ">" = "<"
+  | a == ">=" = "<="
+  | a == "<" = ">"
+  | a == "<=" = ">="
+  | a == "u>" = "u<"
+  | a == "u>=" = "<u="
+  | a == "u<" = "u>"
+  | a == "u<=" = "u>="
+
 genBlock :: FxContext -> LLIR.VBlock -> String -> LLIR.VFunction -> (FxContext, String)
-genBlock cx block name f = (ncx, blockName ++ ":\n" ++ setupGlobals ++ s)
-  where (ncx, s) = foldl (\(cx, acc) name ->
-          let instruction = (HashMap.!) (LLIR.functionInstructions f) name
-              (ncx, str) = genInstruction cx instruction in
+genBlock cx block name f =
+  let instructions = LLIR.blockInstructions block
+      term = last instructions
+      (fastTerm, instructions2) = getBlockInstrs f block
+      instructions3 = if fastTerm then take ((length instructions2)-1) instructions2 else instructions2
+      (ncx, s) = foldl (\(cx, acc) instruction ->
+          let (ncx, str) = genInstruction cx instruction in
                 (ncx, acc ++ ( "# " ++ (show instruction) ++ "\n" ) ++ str))
           (cx, "")
-          (LLIR.blockInstructions block)
-        blockName = LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block
-        setupGlobals = if blockName /= "main_entry" then "" else genSetupGlobals (global cx)
+          instructions3
+      blockName = LLIR.blockFunctionName block ++ "_" ++ LLIR.blockName block
+      setupGlobals = if blockName /= "main_entry" then "" else genSetupGlobals (global cx)
+      fastEnd = if not fastTerm then "" else let
+        termI = instCastU f $ InstRef term
+        (_,cond,tB, fB) = case termI of
+          VCondBranch a c t f -> (a, c, t, f)
+          _ -> error "badcond"
+        cmpI  = instCastU f $ cond
+        (_,op0,a1,a2) = case cmpI of
+          VBinOp a b c d -> (a,b,c,d)
+          _ -> error "badbin"
+        r1 :: String = getRef cx a1
+        r2 :: String = getRef cx a2
+      	phis = (LLIR.getPHIs (function cx) tB) ++ (LLIR.getPHIs (function cx) fB)
+      	cors = concat $ map (\(VPHINode pname hm) ->
+            let var = locStr $ getVar cx pname
+                str :: String = CodeGen.blockName cx
+                val = getRef cx ((HashMap.!) hm str )
+                in move val var
+          ) phis
+        (x1,x2,mvs) = makeOneReg r1 r2 "%rax"
+        (y1,y2,op) = if isImmediateS x1 then (x2, x1, swapBinop op0) else (x1, x2, op0)
+        mp = HashMap.fromList [("==","je"),("!=","jne"),("u<","jb"),("u<=","jbe"),("u>","ja"),("u>","jae"),("<","jl"),("<=","jle"),(">","jg"),(">=","jge")]
+        insts = ["# " ++ (show cmpI), "# "++ (show termI), printf "cmpq %s, %s" y2 y1, printf "%s %s_%s" ((HashMap.!) mp op) (CodeGen.name cx) tB, printf "jmp %s_%s" (CodeGen.name cx) fB]
+        in arrayToLine $ cors ++ mvs ++ insts
+      in (ncx, blockName ++ ":\n" ++ setupGlobals ++ s ++ fastEnd)
 
 genSetupGlobals cx =
   concat $ map (\(name, size) -> arrayToLine $ move ("$" ++ (show size)) name ) $ globalArrays cx
@@ -246,6 +311,9 @@ isMemoryS s = ( (last s) == ')' ) || ( (take (length ".global") s) == ".global" 
 
 isRegisterS :: String -> Bool
 isRegisterS s = (head s) == '%'
+
+isImmediateS :: String -> Bool
+isImmediateS s = (head s) == '$'
 
 move :: String -> String -> [String]
 move loc1 loc2 =
