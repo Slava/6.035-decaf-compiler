@@ -101,6 +101,23 @@ cfold_function func =
          --error (show func)
          cfold_function nfunc
          else func
+
+isPure :: VInstruction -> Bool
+isPure (VUnOp _ _ _ ) = True
+isPure (VBinOp _ _ _ _ ) = True
+isPure (VStore _ _ _) = False
+isPure (VLookup _ _) = True
+isPure (VAllocation _ _ _) = True
+isPure (VArrayStore _ _ _ _) = False
+isPure (VArrayLookup _ _ _) = True
+isPure (VArrayLen _ _) = True
+isPure (VReturn _ _) = False
+isPure (VCondBranch _ _ _ _) = False
+isPure (VUncondBranch _ _) = False
+isPure (VMethodCall _ _ _ _) = False
+isPure (VUnreachable _ ) = False
+isPure (VPHINode _ _) = True
+
 dce :: Builder -> Builder
 dce builder =
     let pm = pmod builder
@@ -115,7 +132,7 @@ cse_function func = func
 dce_function :: VFunction -> VFunction
 dce_function func =
     foldl (\accFunc instr ->
-        if (length $ getUses instr accFunc) == 0
+        if (length $ getUses instr accFunc) == 0 && (isPure instr)
             then deleteInstruction instr accFunc
             else accFunc) func (HashMap.elems $ functionInstructions func)
 
@@ -243,7 +260,7 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
         Left _ ->
             case HashMap.lookup (getInstructionParent func instr) phis of
               Just a -> Right $ (phis, bmap, pm, a)
-              Nothing -> do 
+              Nothing -> do
                 let funcBlocks :: HashMap.Map String VBlock = (blocks func)
                 let blockName :: String = getInstructionParent func instr
                 block :: VBlock <- maybeToError2 (HashMap.lookup blockName funcBlocks) []
