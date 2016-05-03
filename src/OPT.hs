@@ -77,7 +77,7 @@ mem2reg_function pm func =
                     val <- maybeToError2 valM []
                     --val <- getPreviousStoreValue prevStore
                     let replU = replaceAllUses acc2 loadf val
-                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [printf "%s\nprev ID:%s\nfinID:%s\n" (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
+                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [])--[printf "%s\nprev ID:%s\nfinID:%s\n" (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
                     return $ (res,bmap2, phis2, accPm2)
                 of
                     Left dbg2 -> (phis, bmap, accPm, acc,False, dbg ++ dbg2)
@@ -92,7 +92,7 @@ mem2reg_function pm func =
              let nfunc2 = deleteAllUses newFunc alloca
                  nfunc  = deleteInstruction alloca nfunc2
                  pmF = pm2{functions=(HashMap.insert (getName nfunc) nfunc (functions pm2))}
-                 in (pmF, nfunc, True, dbg3 ++ [printf "!!!!\n%s!!!!\n" (show nfunc)])
+                 in (pmF, nfunc, True, dbg3 )
             else (pm2, newFunc, changed0, dbg3)
       (npm, nfunc, changed, dbgs) = foldl foldf (pm, func, False, []) allocas
       in if changed then
@@ -174,7 +174,7 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
 			                   in case lk of
 			                     Just a -> (Right pm, accStores ++ [a], bmap, phis )
 			                     Nothing ->
-			                       let axc = getPreviousStoresInPreds phis bmap pm func alloca lastInstr
+			                       let axc = getPreviousStoresInPreds phis bmap pm f2 alloca lastInstr
                                                    in case axc of
                                                      Left errs -> (Left errs, [], bmap, phis)
                                                      Right (phis2, bm2, pm2, val) ->

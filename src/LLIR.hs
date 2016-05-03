@@ -450,8 +450,8 @@ getInstructionParent func instr =
             _ -> ""
 
 blockToString :: (HashMap.Map String VInstruction) -> VBlock -> String
-blockToString hm (VBlock _ name instr _ _) =
-  " " ++ name ++ ":\n" ++ (foldl (\acc x -> acc ++ "    " ++ (
+blockToString hm (VBlock _ name instr pd _) =
+  " " ++ name ++ ":\t\t\t\t\t" ++ (show pd) ++ "\n" ++ (foldl (\acc x -> acc ++ "    " ++ (
         case HashMap.lookup x hm of
           Just a -> x ++ " = " ++ (show a) ++ "\n"
           Nothing -> "INVALID_INST("++name++")\n"
