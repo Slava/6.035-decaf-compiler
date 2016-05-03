@@ -160,7 +160,6 @@ getLastStore instr instrs =
             Just a -> acc
             Nothing -> case i of
                 VStore _ _ sloc -> if sloc == instrRef then Just i else Nothing
-                VPHINode _ m -> if any (==instrRef) (HashMap.elems m) then Just i else Nothing
                 _ -> Nothing) Nothing instrs
 
 getLastOther :: VInstruction -> [VInstruction] -> Maybe VInstruction
@@ -175,7 +174,6 @@ getLastOther instr instrs =
                     else case i of
                       VStore _ _ sloc -> if sloc == instrRef then Nothing else Just i
                       VLookup _ sloc -> if sloc == instrRef then Nothing else Just i
-                      VPHINode _ m -> if any (==instrRef) (HashMap.elems m) then Nothing else Just i
                       _ -> Just i
           ) Nothing instrs
 
@@ -432,9 +430,7 @@ getInstructionsBefore func instr =
     case do
         let blockName = getInstructionParent func instr
         block <- HashMap.lookup blockName (blocks func)
-        let instrMaybes = map (\name -> HashMap.lookup name $ functionInstructions func) (blockInstructions block)
-        let instrs = catMaybes instrMaybes
-        _ <- if length instrs == length instrMaybes then Just True else Nothing
+        let instrs = map (\name -> (HashMap.!)  (functionInstructions func) name ) (blockInstructions block)
         index <- elemIndex instr instrs
         return $ take index instrs
     of

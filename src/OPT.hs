@@ -8,6 +8,7 @@ import qualified Data.Set as Set
 import qualified LLIR
 import LLIR
 import Text.Printf
+import Data.Word
 
 -- NEED TO TO MEM2REG AS REQUISITE
 mem2reg :: Builder -> Builder
@@ -26,6 +27,81 @@ cse builder =
       fxs2 = HashMap.map cse_function fxs
       pm2 = pm{functions=fxs2}
       in builder{pmod=pm2}
+
+
+cfold :: Builder -> Builder
+cfold builder =
+  let pm = pmod builder
+      fxs :: HashMap.Map String VFunction = functions pm
+      fxs2 = HashMap.map cfold_function fxs
+      pm2 = pm{functions=fxs2}
+      in builder{pmod=pm2}
+
+isConstInt :: ValueRef -> Bool
+isConstInt (ConstInt a) = True
+isConstInt _ = False
+
+getConstInt :: ValueRef -> Integer
+getConstInt (ConstInt a) = a
+getConstInt _ = error "not constInt"
+
+isConstBool :: ValueRef -> Bool
+isConstBool (ConstBool a) = True
+isConstBool _ = False
+
+getConstBool :: ValueRef -> Bool
+getConstBool (ConstBool a) = a
+getConstBool _ = error "not constBool"
+
+
+cfold_function :: VFunction -> VFunction
+cfold_function func =
+  let insts = functionInstructions func
+      foldf = \(func, changed) inst ->
+        case inst of
+          VBinOp name op op1 op2 ->
+            if (isConstInt op1) && (isConstInt op2) then
+               let x1 = getConstInt op1
+                   x2 = getConstInt op2
+                   u1 :: Word64 = fromIntegral x1
+                   u2 :: Word64 = fromIntegral x2
+                   rval = case op of
+                      "==" -> ConstBool $ x1 == x2
+                      "!=" -> ConstBool $ x1 /= x2
+                      "<=" -> ConstBool $ x1 <= x2
+                      "<" -> ConstBool $ x1 < x2
+                      ">=" -> ConstBool $ x1 >= x2
+                      ">" -> ConstBool $ x1 > x2
+                      "u<=" -> ConstBool $ u1 <= u2
+                      "u<" -> ConstBool $ u1 < u2
+                      "u>=" -> ConstBool $ u1 >= u2
+                      "u>" -> ConstBool $ u1 > u2
+                      "+" -> ConstInt $ x1 + x2
+                      "-" -> ConstInt $ x1 - x2
+                      "*" -> ConstInt $ x1 * x2
+                      "/" -> ConstInt $ x1 `div` x2
+                      "%" -> ConstInt $ x1 `mod` x2
+                   f1 = replaceAllUses func inst rval
+                   f2 = deleteInstruction inst f1
+                   in (f2,True)
+            else if (isConstBool op1) && (isConstBool op2) then
+               let x1 = getConstBool op1
+                   x2 = getConstBool op2
+                   rval = case op of
+                      "==" -> ConstBool $ x1 == x2
+                      "!=" -> ConstBool $ x1 /= x2
+                      "&" -> ConstBool $ x1 && x2
+                      "|" -> ConstBool $ x1 || x2
+                   f1 = replaceAllUses func inst rval
+                   f2 = deleteInstruction inst f1
+                   in (f2,True)
+            else (func,changed)
+          _ -> (func,changed)
+      (nfunc, changed) = foldl foldf (func, False) insts
+      in if changed then
+         --error (show func)
+         cfold_function nfunc
+         else func
 
 cse_function :: VFunction -> VFunction
 cse_function func = func
@@ -62,7 +138,7 @@ maybeToError2 Nothing b = Left b
 
 mem2reg_function :: PModule -> VFunction -> (PModule, [IO()])
 mem2reg_function pm func =
-  let allocas = getAllocas func
+  let allocas :: [VInstruction] = getAllocas func
       foldf = \(pm, func, changed, dbg) alloca ->
         if changed then (pm, func, True, dbg) else
         -- attempt change
@@ -77,7 +153,7 @@ mem2reg_function pm func =
                     val <- maybeToError2 valM []
                     --val <- getPreviousStoreValue prevStore
                     let replU = replaceAllUses acc2 loadf val
-                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [])--[printf "%s\nprev ID:%s\nfinID:%s\n" (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
+                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [printf "PHIS:%s\n%s\nprev ID:%s\nfinID:%s\n" (show phis) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
                     return $ (res,bmap2, phis2, accPm2)
                 of
                     Left dbg2 -> (phis, bmap, accPm, acc,False, dbg ++ dbg2)
@@ -101,6 +177,7 @@ mem2reg_function pm func =
 
 optimize :: Builder -> Builder
 optimize b = cse $ mem2reg b
+--optimize b = cfold $ cse $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int
 unsafeElemIndex item array =
@@ -130,7 +207,12 @@ getPreviousStoreInBlock :: VFunction -> VInstruction -> VInstruction -> Either [
 getPreviousStoreInBlock func alloca instr =
     do
         let prevInstrs = getInstructionsBefore func instr
-        prevStore <- maybeToError2 (getLastStore alloca prevInstrs) []--[printf "failed to find last store for %s\n" (show instr)]
+        prevStore0 <- maybeToError2 (getLastStore alloca prevInstrs) [] -- [printf "failed to find last store for %s\n" (show instr)]
+--        prevStore <- return $ prevStore0
+        let nam = getName instr
+        prevStore <- return $ prevStore0
+--prevStore <- Right $ if (nam == "%9" ) then prevStore0 else error $ printf "%s %s\n" (show func) (getName instr) -- if (getName instr) == "%15" then error (printf "ps:%s inst:%s\n" (show prevStore0) (show instr) ) else prevStore0
+--        prevStore <- Right $ if (nam == "%9" || nam == "%20" ) then prevStore0 else error $ printf "%s %s\n" (show func) (getName instr) -- if (getName instr) == "%15" then error (printf "ps:%s inst:%s\n" (show prevStore0) (show instr) ) else prevStore0
         val <- case prevStore of
           VStore _ a _ -> Right a
           _ -> Left [printf "getPrevious store didnt return a store?\n"]
@@ -146,7 +228,9 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
     in case prevStoreInBlock of
         Right p -> Right (phis, bmap, pm, p)
         Left _ ->
-            do
+            case HashMap.lookup (getInstructionParent func instr) phis of
+              Just a -> Right $ (phis, bmap, pm, a)
+              Nothing -> do 
                 let funcBlocks :: HashMap.Map String VBlock = (blocks func)
                 let blockName :: String = getInstructionParent func instr
                 block :: VBlock <- maybeToError2 (HashMap.lookup blockName funcBlocks) []
