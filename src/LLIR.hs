@@ -160,6 +160,7 @@ getLastStore instr instrs =
             Just a -> acc
             Nothing -> case i of
                 VStore _ _ sloc -> if sloc == instrRef then Just i else Nothing
+                VPHINode _ m -> if any (==instrRef) (HashMap.elems m) then Just i else Nothing
                 _ -> Nothing) Nothing instrs
 
 getLastOther :: VInstruction -> [VInstruction] -> Maybe VInstruction
@@ -174,6 +175,7 @@ getLastOther instr instrs =
                     else case i of
                       VStore _ _ sloc -> if sloc == instrRef then Nothing else Just i
                       VLookup _ sloc -> if sloc == instrRef then Nothing else Just i
+                      VPHINode _ m -> if any (==instrRef) (HashMap.elems m) then Nothing else Just i
                       _ -> Just i
           ) Nothing instrs
 
