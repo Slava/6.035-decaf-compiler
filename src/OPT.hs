@@ -69,9 +69,9 @@ mem2reg_function func =
             (_, loads0, _) = partitionStoreLoadOther func uses0
             (newFunc,changed0, dbg2) = foldl (\(acc,changed, dbg) loadu -> case do
                     loadf <- maybeToError2 (getUseInstr acc loadu) $ [] -- [printf "load failed :(\n"]
-                    valS <- getPreviousStore acc alloca loadf
-                    val <- getPreviousStoreValue acc alloca loadf
-                    let replU = replaceAllUses acc loadf val
+                    (acc2, prevStore) <- getPreviousStoresInPreds acc alloca loadf
+                    val <- getPreviousStoreValue prevStore
+                    let replU = replaceAllUses acc2 loadf val
                     let res :: (VFunction, [IO()] )= (deleteInstruction loadf replU, [])--[printf "%s\n" (show loadf), printf "previous store %s\n" (show valS), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
                     return $ res
                 of
@@ -102,17 +102,26 @@ unsafeElemIndex item array =
         Just a -> a
         Nothing -> -1
 
-getPreviousStoreValue :: VFunction -> VInstruction -> VInstruction -> Either [IO()] ValueRef
-getPreviousStoreValue func alloca instr =
-    do
-        i <- getPreviousStore func alloca instr
-        case i of
-            VStore _ a _ -> Right a
-            _ -> Left [printf "getPrevious store didn't return a store?!!\n"]
+getPreviousStoreValue :: VInstruction -> Either [IO()] ValueRef
+getPreviousStoreValue instr =
+    case instr of
+        VStore _ a _ -> Right a
+        VPHINode a b -> Right $ InstRef a
+        _ -> Left [printf "getPrevious store didn't return a store?!!\n"]
+
+unsafeGetOp :: VInstruction -> Int -> ValueRef
+unsafeGetOp instr index =
+    case getOp instr index of
+        Just a -> a
+        Nothing -> ConstInt 0
+
+storesToBlockVals :: VFunction -> [VInstruction] -> [(String, ValueRef)]
+storesToBlockVals func stores =
+    map (\store -> (getInstructionParent func store, unsafeGetOp store 0)) stores
 
 -- Helps eliminates unnecessary loads.
-getPreviousStore :: VFunction -> VInstruction -> VInstruction -> Either [IO()] VInstruction
-getPreviousStore func alloca instr =
+getPreviousStoreInBlock :: VFunction -> VInstruction -> VInstruction -> Either [IO()] VInstruction
+getPreviousStoreInBlock func alloca instr =
     do
         let prevInstrs = getInstructionsBefore func instr
         prevStore <- maybeToError2 (getLastStore alloca prevInstrs) []--[printf "failed to find last store for %s\n" (show instr)]
@@ -122,3 +131,48 @@ getPreviousStore func alloca instr =
                     Just a -> unsafeElemIndex a prevInstrs < unsafeElemIndex prevStore prevInstrs
              then Right True else Left []--[printf "bad instruction between load/store %s :(\n" (show prevOther)]
         return prevStore
+
+getPreviousStoresInPreds :: VFunction -> VInstruction -> VInstruction -> Either [IO()] (VFunction, VInstruction)
+getPreviousStoresInPreds func alloca instr =
+    let prevStoreInBlock = getPreviousStoreInBlock func alloca instr
+    in case prevStoreInBlock of
+        Left _ ->
+            do
+                let funcBlocks :: HashMap.Map String VBlock = (blocks func)
+                let blockName :: String = getInstructionParent func instr
+                block :: VBlock <- maybeToError2 (HashMap.lookup blockName funcBlocks) []
+                let preds :: [String] = blockPredecessors block
+                if length preds == 1
+                    then
+                        do
+                            prevBlock :: VBlock <- maybeToError2 (HashMap.lookup (head preds) funcBlocks) []
+                            let lastInstrName :: String = last $ blockInstructions prevBlock
+                            lastInstr :: VInstruction <- maybeToError2 (HashMap.lookup lastInstrName (functionInstructions func)) []
+                            getPreviousStoresInPreds func alloca lastInstr
+                    else if length preds < 1
+                        then Left [printf "How does a block have 0 preds??\n"]
+                        else
+                            let (newFuncOrErrors, stores) :: (Either [IO()] VFunction, [VInstruction]) = foldl (\(accFuncOrErrors, accStores) p ->
+                                    case accFuncOrErrors of
+                                        Left errs -> (Left errs, [])
+                                        Right f ->
+                                            let predBlockMaybe :: Maybe VBlock = HashMap.lookup p (blocks f)
+                                                in case predBlockMaybe of
+                                                    Just predBlock ->
+                                                        let lastInstrName :: String = last $ blockInstructions predBlock
+                                                            in case HashMap.lookup lastInstrName (functionInstructions func) of
+                                                                Just lastInstr -> case getPreviousStoresInPreds f alloca lastInstr of
+                                                                    Left errs -> (Left errs, [])
+                                                                    Right (predFunc, predStore) -> (Right predFunc, accStores ++ [predStore])
+                                                                Nothing -> (Left [printf "Instruction doesn't exist??\n"], [])
+                                                    Nothing -> (Left [printf "Block doesn't exist??\n"], [])
+                                                    ) (Right func, []) preds
+                                in case newFuncOrErrors of
+                                    Left errs -> Left errs
+                                    Right f ->
+                                        -- TODO: Fix the empty string
+                                        let newInstr :: VInstruction = VPHINode "" (HashMap.fromList $ storesToBlockVals f stores)
+                                            block2 :: VBlock = block{blockInstructions=((blockInstructions block) ++ [(getName newInstr)])}
+                                            newFunc :: VFunction = f{blocks=(HashMap.insert blockName block2 (blocks f)), functionInstructions=(HashMap.insert (getName newInstr) newInstr (functionInstructions f))}
+                                            in Right (newFunc, newInstr)
+        Right p -> Right (func, p)

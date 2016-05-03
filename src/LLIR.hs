@@ -549,27 +549,6 @@ instance Locationable VBlock where
 instance Locationable Context where
   setInsertionPoint ctx builder = builder{location=ctx}
 
-prependToBlock :: VInstruction -> VBlock -> VBlock
-prependToBlock instr (VBlock a b instructions c d) =
-  VBlock a b ([getName instr] ++ instructions) c d
-
-prependInstruction :: VInstruction -> Builder -> String -> Builder
-prependInstruction instr builder blockName =
-  let newBuilder :: Maybe Builder =
-        do
-          let context = location builder
-          let pmod1 = pmod builder
-          let fn = contextFunctionName context
-          func <- HashMap.lookup fn (functions pmod1)
-          block <- HashMap.lookup blockName (blocks func)
-          block2 <- return $ prependToBlock instr block
-          func2 <- return $ func{blocks=(HashMap.insert blockName block2 (blocks func)),functionInstructions=(HashMap.insert (getName instr) instr (functionInstructions func))}
-          functions2 <- return $ HashMap.insert fn func2 (functions pmod1)
-          return $ builder{pmod=pmod1{functions=functions2}}
-  in case newBuilder of
-    Just builder2 -> builder2
-    Nothing -> builder
-
 appendToBlock :: VInstruction -> VBlock -> VBlock
 appendToBlock instr (VBlock a b instructions c d) = VBlock a b (instructions ++ [getName instr]) c d
 
@@ -657,9 +636,9 @@ maybeIntToInt val = case val of
   Just v  -> v
 
 zeroMemory :: (ValueRef, Builder) -> VType -> Maybe Int-> Builder
-zeroMemory (mem,builder) typ val = 
+zeroMemory (mem,builder) typ val =
   case val of
-    Nothing ->  
+    Nothing ->
       case typ of
          TInt   -> snd $ createStore (ConstInt  0) mem builder
          TBool  -> snd $ createStore (ConstBool False) mem builder
@@ -671,7 +650,7 @@ zeroMemory (mem,builder) typ val =
 createZeroAlloca :: VType -> Maybe Int -> Builder -> (ValueRef, Builder)
 createZeroAlloca op len builder0 =
   let (ref, builder) = createAlloca op len builder0
-      builder2 = zeroMemory (ref, builder) op len 
+      builder2 = zeroMemory (ref, builder) op len
       in (ref, builder2)
 
 createStore :: ValueRef -> ValueRef -> Builder -> (ValueRef, Builder)

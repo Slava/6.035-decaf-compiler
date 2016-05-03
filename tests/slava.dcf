@@ -1,9 +1,15 @@
 callout printf;
 
-void main() {
-    if (1 < 2) {
-        printf("Hello\n");
+int thing(boolean thething) {
+    int i;
+    if (thething) {
+        i = 1;
     } else {
-        printf("Goodbye\n");
+        i = 2;
     }
+    return i;
+}
+
+void main() {
+    printf("%d\n", thing(true));
 }
