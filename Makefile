@@ -20,6 +20,7 @@ FILE=./tests/slava.dcf
 FILE=./tests/tests/codegen/input/06-control-flow.dcf
 FILE=./tmp.dcf
 FILE=./tests/tests/codegen/input/11-big-array.dcf
+FILE=./tests/tests/optimizer/input/noise_median.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t inter $(FILE)

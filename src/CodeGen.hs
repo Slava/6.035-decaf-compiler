@@ -17,7 +17,6 @@ data CGContext = CGContext {
   globalArrays :: [(String, Int)]
 } deriving(Eq, Show);
 
---hml :: HashMap.Map A B -> A -> B
 hml a b l = case HashMap.lookup b a of
   Nothing -> error ( printf "%s: Key %s not in map %s\n" (show l) (show b) (show a) )
   Just c -> c

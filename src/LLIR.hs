@@ -503,7 +503,7 @@ uniqueBlockName str func =
       inMap :: Bool = HashMap.member str hm in
         case inMap of
           False -> str
-          True -> uniqueBlockName (str ++ ".1") func
+          True -> str ++ "." ++ ( show $ head $ filter (\x -> not $ HashMap.member (str ++ "." ++ (show x) ) hm) [1..] )
 
 createID :: PModule -> (String, PModule)
 createID pmod =

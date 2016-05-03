@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
 module OPT where
 
 import Data.List
@@ -32,7 +33,7 @@ cfold :: Builder -> Builder
 cfold builder =
   let pm = pmod builder
       fxs :: HashMap.Map String VFunction = functions pm
-      fxs2 = HashMap.map cfold_function fxs
+      fxs2 = HashMap.map (cfold_function (globals pm) ) fxs
       pm2 = pm{functions=fxs2}
       in builder{pmod=pm2}
 
@@ -52,12 +53,39 @@ getConstBool :: ValueRef -> Bool
 getConstBool (ConstBool a) = a
 getConstBool _ = error "not constBool"
 
+forceInt :: Maybe Int -> Int
+forceInt (Just a) = a
+forceInt _ = error "cant force nothing from maybe"
 
-cfold_function :: VFunction -> VFunction
-cfold_function func =
+hml :: Ord a => Show b => Show a => HashMap.Map a b -> a -> String -> b
+hml a b l = case HashMap.lookup b a of
+  Nothing -> error ( printf "%s: Key %s not in map %s\n" l (show b) (show a) )
+  Just c -> c
+
+cfold_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> VFunction
+cfold_function globals func =
   let insts = functionInstructions func
       foldf = \(func, changed) inst ->
+        if changed then (func, True) else
         case inst of
+          VArrayLen name al ->
+            case al of
+              GlobalRef nam ->
+                let rval = ConstInt$ toInteger $ forceInt $ snd $ hml globals nam "globalref"
+                    f1 = replaceAllUses func inst rval
+                    f2 = deleteInstruction inst f1
+                    in (f2,True)
+              InstRef nam ->
+                let str :: String = printf "instref f:%s" (show func)
+                    rinst :: VInstruction = hml (functionInstructions func) nam $ str
+                    len :: Int = case rinst of
+                      VAllocation _ _ (Just n) -> n
+                      a -> error $ printf "bad allocation len :%s" $ show a
+                    rval = ConstInt$ toInteger $ len
+                    f1 = replaceAllUses func inst rval
+                    f2 = deleteInstruction inst f1
+                    in (f2,True)
+              a -> error $ printf "Invalid thing to take len of %s\n:inst:%s\nfunc:%s" (show a) (show inst) (show func)
           VBinOp name op op1 op2 ->
             if (isConstInt op1) && (isConstInt op2) then
                let x1 = getConstInt op1
@@ -99,7 +127,7 @@ cfold_function func =
       (nfunc, changed) = foldl foldf (func, False) insts
       in if changed then
          --error (show func)
-         cfold_function nfunc
+         cfold_function globals nfunc
          else func
 
 isPure :: VInstruction -> Bool

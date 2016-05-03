@@ -84,6 +84,8 @@ for file in $PWD/input/*.dcf; do
     fi
   fi
   printf "Message: %s\n" $msg
+  printf "unopt: %f\n" $unopt
+  printf "opt: %f\n" $opt
   int_speedup=$(($unopt / $opt)) 
   dec_speedup=$((($unopt * 1000) / $opt - ($int_speedup * 1000))) 
   printf "%d.%03dx speedup\n" $int_speedup ${dec_speedup}
