@@ -2,12 +2,18 @@ callout printf;
 
 int thing(boolean thething) {
     int i;
+    int x;
     if (thething) {
+        if (thething) {
+            x = 3;
+        } else {
+            x = 4;
+        }
         i = 1;
     } else {
         i = 2;
     }
-    return i;
+    return i + x;
 }
 
 void main() {
