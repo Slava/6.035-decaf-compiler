@@ -77,11 +77,11 @@ mem2reg_function pm func =
                     val <- maybeToError2 valM []
                     --val <- getPreviousStoreValue prevStore
                     let replU = replaceAllUses acc2 loadf val
-                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [printf "%s\nprev ID:%s\n" (show loadf) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
-                    return $ (res,bmap2, phis2)
+                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [printf "%s\nprev ID:%s\nfinID:%s\n" (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
+                    return $ (res,bmap2, phis2, accPm2)
                 of
                     Left dbg2 -> (phis, bmap, accPm, acc,False, dbg ++ dbg2)
-                    Right ((a,dbg2),bmap2, phis2) -> (phis2, bmap2, accPm{functions=(HashMap.insert (getName a) a (functions accPm))}, a,True, dbg ++ dbg2 )
+                    Right ((a,dbg2),bmap2, phis2, accPm2) -> (phis2, bmap2, accPm2{functions=(HashMap.insert (getName a) a (functions accPm2))}, a,True, dbg ++ dbg2 )
                 ) (phis, lastValueInBlocks, pm, func,False, []) loads0
             --(newFunc, changed0) = (func, False)
             uses :: [Use] = getUses alloca newFunc
@@ -195,7 +195,8 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
                                               let val = head nphi
                                                   bmapF = HashMap.map (\x -> if x == (Just $ InstRef $ getName phi) then Just $ val else x) bmap2
                                                   phisF = HashMap.map (\x -> if x == (Just $ InstRef $ getName phi) then Just $ val else x) phis3 
-                                                  nf = deleteInstruction phi f
+                                                  f2 = replaceAllUses f phi val
+                                                  nf = deleteInstruction phi f2
                                                   fpm :: PModule = npm{functions=(HashMap.insert (getName nf) nf (functions npm))}
                                                   in Right (phisF, bmapF, fpm, Just val)
                                            else
