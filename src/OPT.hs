@@ -28,8 +28,6 @@ cse builder =
       pm2 = pm{functions=fxs2}
       in builder{pmod=pm2}
 
-<<<<<<< HEAD
-
 cfold :: Builder -> Builder
 cfold builder =
   let pm = pmod builder
@@ -103,15 +101,6 @@ cfold_function func =
          --error (show func)
          cfold_function nfunc
          else func
-=======
-dce :: Builder -> Builder
-dce builder =
-    let pm = pmod builder
-        fxs :: HashMap.Map String VFunction = functions pm
-        fxs2 = HashMap.map dce_function fxs
-        pm2 = pm{functions=fxs2}
-        in builder{pmod=pm2}
->>>>>>> daea786d8f3b17682ae63f17547beaca06d84c04
 
 cse_function :: VFunction -> VFunction
 cse_function func = func
