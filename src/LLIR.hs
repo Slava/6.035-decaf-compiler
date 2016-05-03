@@ -509,8 +509,10 @@ uniqueBlockName str func =
 
 createID :: PModule -> (String, PModule)
 createID pmod =
-  let name :: String = "%" ++ (show ((lastId pmod)+1)) in
-    (name, pmod{lastId=((lastId pmod)+1)})
+  let name :: String = "%" ++ (show ((lastId pmod)+1))
+      exists :: Int = HashMap.fold (\f acc -> acc + case HashMap.lookup name (functionInstructions f) of Nothing -> 0; _ -> 1) 0 (functions pmod)
+      in if exists == 0 then (name, pmod{lastId=((lastId pmod)+1)}) else error (printf "Key %s already exists: MOD\n %s\n" (show name) (show pmod) )
+
 
 data Context          = Context {
   contextFunctionName :: String,
@@ -585,6 +587,19 @@ appendInstruction instr builderm =
       in case updated of
         Just builder2 -> builder2
         Nothing -> builder0
+
+
+updateInstructionF :: VInstruction -> String -> VFunction -> VFunction
+updateInstructionF instr bn func =
+  let updated :: Maybe VFunction =
+        do
+          block <- HashMap.lookup bn (blocks func)
+          block2 <- return $ block
+          func2 <- return $ func{blocks=(HashMap.insert bn block2 (blocks func)),functionInstructions=(HashMap.insert (getName instr) instr (functionInstructions func))}
+          return $ func2
+      in case updated of
+        Just func2 -> func2
+        Nothing -> func
 
 updateInstruction :: VInstruction -> Builder -> Builder
 updateInstruction instr builderm =

@@ -206,14 +206,14 @@ semanticVerifyDeclaration (Method rt name args body) m ar =
         ) (0,m3, ar4) args
       (m5, ar6) = semanticVerifyBlock body m4 ar5
       ty = stringToVType rt
-      ar9 = case ty of
-        LLIR.TVoid -> ar6
-        _ -> let ar7 = snd $ addInstruction2 ar6 $ \x -> (Nothing, LLIR.createExit (-2) x)
-                 ar8 = snd $ addInstruction2 ar7 $ LLIR.createUnreachable
-                 in ar8
       ar10 = case LLIR.getTerminator (contextBuilder ar6) of
-        Nothing -> snd $ addInstruction2 ar9 $ LLIR.createReturn Nothing
-        _ -> ar9
+        Nothing -> 
+          case ty of 
+            LLIR.TVoid -> snd $ addInstruction2 ar6 $ LLIR.createReturn Nothing
+            _ -> let ar7 = snd $ addInstruction2 ar6 $ \x -> (Nothing, LLIR.createExit (-2) x)
+                     ar8 = snd $ addInstruction2 ar7 $ LLIR.createUnreachable
+                     in ar8
+        _ -> ar6
       in (m2, ar10)
 
 semanticVerifyBlock :: Block -> Module -> Context -> (Module, Context)
