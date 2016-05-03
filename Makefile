@@ -19,6 +19,7 @@ FILE=./tests/tests/codegen/input/04-math2.dcf
 FILE=./tests/slava.dcf
 FILE=./tests/tests/codegen/input/06-control-flow.dcf
 FILE=./tmp.dcf
+FILE=./tests/tests/codegen/input/11-big-array.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t inter $(FILE)
