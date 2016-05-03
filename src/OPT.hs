@@ -28,6 +28,7 @@ cse builder =
       pm2 = pm{functions=fxs2}
       in builder{pmod=pm2}
 
+<<<<<<< HEAD
 
 cfold :: Builder -> Builder
 cfold builder =
@@ -102,9 +103,25 @@ cfold_function func =
          --error (show func)
          cfold_function nfunc
          else func
+=======
+dce :: Builder -> Builder
+dce builder =
+    let pm = pmod builder
+        fxs :: HashMap.Map String VFunction = functions pm
+        fxs2 = HashMap.map dce_function fxs
+        pm2 = pm{functions=fxs2}
+        in builder{pmod=pm2}
+>>>>>>> daea786d8f3b17682ae63f17547beaca06d84c04
 
 cse_function :: VFunction -> VFunction
 cse_function func = func
+
+dce_function :: VFunction -> VFunction
+dce_function func =
+    foldl (\accFunc instr ->
+        if (length $ getUses instr accFunc) == 0
+            then deleteInstruction instr accFunc
+            else accFunc) func (HashMap.elems $ functionInstructions func)
 
 partitionStoreLoadOther :: VFunction -> [Use] -> ([Use], [Use], [Use])
 partitionStoreLoadOther func uses =
@@ -176,8 +193,8 @@ mem2reg_function pm func =
          else (npm, dbgs)
 
 optimize :: Builder -> Builder
-optimize b = cse $ mem2reg b
---optimize b = cfold $ cse $ mem2reg b
+optimize b = dce $ cse $ mem2reg b
+--optimize b = cfold $ dce $ cse $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int
 unsafeElemIndex item array =
@@ -269,16 +286,16 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
                                  Left errs -> Left errs
                                  Right npm ->
                                    let nl = Data.Maybe.catMaybes stores
-                                       in 
+                                       in
                                        if length nl /= length stores then Right (phis, bmap, pm, Nothing)
                                        else
                                        let nphi = filter (\x -> x /= (InstRef $ getName phi) ) nl
                                            f = (HashMap.!) (functions npm) (getName func)
-                                           in 
+                                           in
                                            if all (== head nphi) (tail nphi) then
                                               let val = head nphi
                                                   bmapF = HashMap.map (\x -> if x == (Just $ InstRef $ getName phi) then Just $ val else x) bmap2
-                                                  phisF = HashMap.map (\x -> if x == (Just $ InstRef $ getName phi) then Just $ val else x) phis3 
+                                                  phisF = HashMap.map (\x -> if x == (Just $ InstRef $ getName phi) then Just $ val else x) phis3
                                                   f2 = replaceAllUses f phi val
                                                   nf = deleteInstruction phi f2
                                                   fpm :: PModule = npm{functions=(HashMap.insert (getName nf) nf (functions npm))}
@@ -286,7 +303,7 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
                                            else
                                               let mapper :: HashMap.Map String ValueRef = HashMap.fromList $ zip preds nl
                                                   bmapF = bmap2
-                                                  phisF = phis3 
+                                                  phisF = phis3
                                                   nf = updateInstructionF (VPHINode (getName phi) mapper ) blockName f
                                                   fpm :: PModule = npm{functions=(HashMap.insert (getName nf) nf (functions npm))}
                                                   in Right (phisF, bmapF, fpm, Just $ InstRef $ getName phi)
