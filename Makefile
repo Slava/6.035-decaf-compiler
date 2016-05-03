@@ -17,6 +17,7 @@ FILE=./tests/tests/codegen/input/16-qsort.dcf
 FILE=./tests/tests/codegen/input/06-control-flow.dcf
 #FILE=./tests/tests/optimizer/input/noise_median.dcf
 FILE=./tests/tests/codegen/input/04-math2.dcf
+FILE=./tests/slava.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t opt $(FILE)

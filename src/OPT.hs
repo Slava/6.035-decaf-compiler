@@ -157,34 +157,24 @@ getPreviousStoresInPreds pm func alloca instr =
                                     case accPmOrErrors of
                                         Left errs -> (Left errs, [])
                                         Right tempPm ->
-                                            let f = HashMap.lookup (getName func) (functions tempPm)
-                                                in case f of
-                                                    Just f2 ->
-                                                        let predBlockMaybe :: Maybe VBlock = HashMap.lookup p (blocks f2)
-                                                            in case predBlockMaybe of
-                                                                Just predBlock ->
-                                                                    let lastInstrName :: String = last $ blockInstructions predBlock
-                                                                        in case HashMap.lookup lastInstrName (functionInstructions f2) of
-                                                                            Just lastInstr -> case getPreviousStoresInPreds tempPm f2 alloca lastInstr of
-                                                                                Left errs -> (Left errs, [])
-                                                                                Right (predModule, predStore) -> (Right predModule, accStores ++ [predStore])
-                                                                            Nothing -> (Left [printf "Instruction doesn't exist??\n"], [])
-                                                                Nothing -> (Left [printf "Block doesn't exist??\n"], [])
-                                                    Nothing -> (Left [printf "Function mystically dissappeared because why not\n"], [])
-                                                    ) (Right pm, []) preds
+                                            let f2 = (HashMap.!) (functions tempPm) (getName func)
+                                                predBlock :: VBlock = (HashMap.!) (blocks f2) p
+                                                lastInstrName :: String = last $ blockInstructions predBlock
+                                                lastInstr = (HashMap.!) (functionInstructions f2) lastInstrName
+                                                in case getPreviousStoresInPreds tempPm f2 alloca lastInstr of
+                                                    Left errs -> (Left errs, [])
+                                                    Right (predModule, predStore) -> (Right predModule, accStores ++ [predStore])
+                                    ) (Right pm, []) preds
                                 in case newPmOrErrors of
                                     Left errs -> Left errs
                                     Right npm ->
                                         let (instrName, npm2) = createID npm
-                                            newFunc = HashMap.lookup (getName func) (functions npm2)
-                                            in case newFunc of
-                                                Just f ->
-                                                    let newInstr :: VInstruction = VPHINode instrName (HashMap.fromList $ storesToBlockVals f stores)
-                                                        block2 :: VBlock = block{blockInstructions=([(getName newInstr)] ++ (blockInstructions block))}
-                                                        newFunc :: VFunction = f{blocks=(HashMap.insert blockName block2 (blocks f)), functionInstructions=(HashMap.insert (getName newInstr) newInstr (functionInstructions f))}
-                                                        newPModule :: PModule = npm2{functions=(HashMap.insert (getName newFunc) newFunc (functions npm2))}
-                                                        in Right (newPModule, newInstr)
-                                                Nothing -> Left [printf "Function mystically dissappeared because why not\n"]
+                                            f = (HashMap.!) (functions npm2) (getName func)
+                                            newInstr :: VInstruction = VPHINode instrName (HashMap.fromList $ storesToBlockVals f stores)
+                                            block2 :: VBlock = block{blockInstructions=([(getName newInstr)] ++ (blockInstructions block))}
+                                            newFunc :: VFunction = f{blocks=(HashMap.insert blockName block2 (blocks f)), functionInstructions=(HashMap.insert (getName newInstr) newInstr (functionInstructions f))}
+                                            newPModule :: PModule = npm2{functions=(HashMap.insert (getName newFunc) newFunc (functions npm2))}
+                                            in Right (newPModule, newInstr)
         Right p -> Right (pm, p)
 
 blockDominatorsCompute :: HashMap.Map String (Set.Set String) -> VFunction -> HashMap.Map String (Set.Set String)
