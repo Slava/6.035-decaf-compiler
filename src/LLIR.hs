@@ -269,7 +269,7 @@ opCount (VArrayLen _ _) = 1
 opCount (VReturn _ (Just a)) = 1
 opCount (VReturn _ Nothing) = 0
 opCount (VCondBranch _ _ _ _) = 1
-opCount (VMethodCall _ _ _ vals) = length vals
+opCount (VMethodCall _ _ _ vals) = 1 + length vals
 opCount (VPHINode _ valMap) = length (HashMap.elems valMap)
 opCount _ = 0
 
@@ -288,8 +288,11 @@ getOp (VArrayLookup _ _ val1) 1 = Just val1
 getOp (VArrayLen _ val0) 0 = Just val0
 getOp (VReturn _ val0) 0 = val0
 getOp (VCondBranch _ val0 _ _) 0 = Just val0
--------- TODO MAKE THE function itself an op!!!
-getOp (VMethodCall _ _ _ vals) i = safeBangBang vals i
+getOp (VMethodCall _ isCallout fname vals) i =
+  if i==0 then
+    Just $ if isCallout then CalloutRef fname else FunctionRef fname
+  else
+    safeBangBang vals (i-1)
 getOp (VPHINode _ valMap) i = safeBangBang (HashMap.elems valMap) i
 getOp _ _ = Nothing
 
@@ -308,7 +311,10 @@ replaceOp (VArrayLookup a val0 _) 1 nval = (VArrayLookup a val0 nval)
 replaceOp (VArrayLen a _) 0 nval = (VArrayLen a nval)
 replaceOp (VReturn a _) 0 nval = (VReturn a (Just nval))
 replaceOp (VCondBranch a _ b c) 0 nval = (VCondBranch a nval b c)
-replaceOp (VMethodCall a b c vals) i nval = (VMethodCall a b c (take i vals ++ [nval] ++ drop (i + 1) vals))
+replaceOp (VMethodCall a b c vals) 0 (CalloutRef fname) = (VMethodCall a True fname vals)
+replaceOp (VMethodCall a b c vals) 0 (FunctionRef fname) = (VMethodCall a False fname vals)
+replaceOp (VMethodCall a b c vals) 0 _ = error "invalid replacement of function call"
+replaceOp (VMethodCall a b c vals) ij nval = let i = ij - 1 in (VMethodCall a b c (take i vals ++ [nval] ++ drop (i + 1) vals))
 replaceOp (VPHINode a valMap) i nval = case (safeBangBang (HashMap.keys valMap) i) of
     Just key -> (VPHINode a $ HashMap.insert key nval valMap)
     Nothing -> (VPHINode a valMap)
@@ -381,6 +387,36 @@ getUses inst func =
           if inst == ninst then Just mval else Nothing
       in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
 
+-- get all uses that this instruction is used by (ie all things this function is depended on)
+getUsesValRef :: ValueRef -> VFunction -> [Use]
+getUsesValRef vref func =
+  let instM = (functionInstructions func)
+      isValid :: (Use -> Maybe Use) = \mval -> do
+          val <- getUseValue func mval
+          if val == vref then Just mval else Nothing
+      in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
+
+-- get all uses that this instruction is used by (ie all things this function is depended on)
+getBlockUses :: VInstruction -> VFunction -> [String] -> [Use]
+getBlockUses inst func blks =
+  let instM = HashMap.intersection (functionInstructions func) (HashMap.fromList $ zip (concat $ map ( blockInstructions . ( (HashMap.!) (blocks func) ) ) blks ) [0..] )
+      isValid :: (Use -> Maybe Use) = \mval -> do
+          val <- getUseValue func mval
+          ninst <- case val of
+            InstRef a -> HashMap.lookup a instM
+            _ -> Nothing
+          if inst == ninst then Just mval else Nothing
+      in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
+
+-- get all uses that this instruction is used by (ie all things this function is depended on)
+getBlockUsesValRef :: ValueRef -> VFunction -> [String] -> [Use]
+getBlockUsesValRef vref func blks=
+  let instM = HashMap.intersection (functionInstructions func) (HashMap.fromList $ zip (concat $ map ( blockInstructions . ( (HashMap.!) (blocks func) ) ) blks ) [0..] )
+      isValid :: (Use -> Maybe Use) = \mval -> do
+          val <- getUseValue func mval
+          if val == vref then Just mval else Nothing
+      in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
+
 instCast :: VFunction -> ValueRef -> Maybe VInstruction
 instCast f (InstRef a) = HashMap.lookup a (functionInstructions f)
 instCast _ _  = Nothing
@@ -431,14 +467,50 @@ deleteBlockNI :: VBlock -> VFunction -> VFunction
 deleteBlockNI block func =
   let name = getName block
       blcks = HashMap.delete name $ blocks func
-      in func{blocks=blcks, blockOrder=delete name (blockOrder func)}
+      succs = (map ((HashMap.!) (blocks func)) $ blockSuccessors block)
+      f1 = func{blocks=blcks, blockOrder=delete name (blockOrder func)}
+      rf :: VFunction -> VBlock -> VFunction = \f b -> removePredecessor b name f
+      f2 = foldl rf f1 succs
+      in f2
 
 deleteBlock :: VBlock -> VFunction -> VFunction
 deleteBlock block func =
   let name = getName block
       insts :: HashMap.Map String VInstruction = HashMap.filterWithKey (\k v -> not $ elem k (blockInstructions block) ) (functionInstructions func)
       blcks = HashMap.delete name $ blocks func
-      in func{blocks=blcks, functionInstructions=insts, blockOrder=delete name (blockOrder func)}
+      succs = (map ((HashMap.!) (blocks func)) $ blockSuccessors block)
+      f1 = func{blocks=blcks, functionInstructions=insts, blockOrder=delete name (blockOrder func)}
+      rf :: VFunction -> VBlock -> VFunction = \f b -> removePredecessor b name f
+      f2 = foldl rf f1 succs
+      in f2
+
+removePredecessor :: VBlock -> String -> VFunction -> VFunction
+removePredecessor block pred func =
+  let npred = delete pred (blockPredecessors block)
+      block2 = block{blockPredecessors=npred}
+      f0 = updateBlockF block2 func
+      blockName = getName block2
+      phis :: [VInstruction] = getPHIs func blockName
+      in if (length npred) == 0 then
+          deleteBlock block2 f0
+        else if (length npred) == 1 then
+        -- nuke phis
+          let tp = npred !! 0
+              fx :: VFunction -> VInstruction -> VFunction = ( replaceAndRemoveF (\(VPHINode _ mp ) -> hml mp tp "llir rpred") )
+              f1 :: VFunction = foldl fx f0 phis
+              in --if blockName /= "ifFalse" then error $ printf "phis:%s\n prev:%s\n f1:%s\n" (show phis) (show func) (show f1) else 
+                 f1
+        else
+          let f1 = foldl (\f (VPHINode n mp ) ->
+                   let phi = VPHINode n mp
+                       vals = HashMap.elems mp
+                       nphi :: [ValueRef] = filter (\x -> x /= (InstRef $ n) ) vals
+                       in if all (== head nphi) (tail nphi) then
+                            replaceAndRemove (head nphi) f phi
+                          else
+                            updateInstructionF (VPHINode n $ HashMap.delete pred mp) f ) f0 phis
+              in f1
+-- -}
 
 getParentBlock :: VInstruction -> VFunction -> VBlock
 getParentBlock inst func =
@@ -626,38 +698,11 @@ hml a b l = case HashMap.lookup b a of
   Nothing -> error ( printf "%s: Key %s not in map %s\n" l (show b) (show a) )
   Just c -> c
 
-removePredecessor :: VBlock -> String -> VFunction -> VFunction
-removePredecessor block pred func =
-  let npred = delete pred (blockPredecessors block)
-      block2 = block{blockPredecessors=npred}
-      f0 = updateBlockF block2 func
-      blockName = getName block2
-      phis :: [VInstruction] = getPHIs func blockName
-      in if length npred == 1
-        then
-        -- nuke phis
-          let tp = npred !! 0
-              fx :: VFunction -> VInstruction -> VFunction = ( replaceAndRemoveF (\(VPHINode _ mp ) -> hml mp tp "llir rpred") )
-              f1 :: VFunction = foldl fx f0 phis
-              in f1
-        else
-          let f1 = foldl (\f (VPHINode n mp ) ->
-                   let phi = VPHINode n mp
-                       vals = HashMap.elems mp
-                       nphi :: [ValueRef] = filter (\x -> x /= (InstRef $ n) ) vals
-                       in if all (== head nphi) (tail nphi) then
-                            replaceAndRemove (head nphi) f phi
-                          else
-                            updateInstructionF (VPHINode n $ HashMap.delete pred mp) blockName f ) f0 phis
-              in f1
-
-updateInstructionF :: VInstruction -> String -> VFunction -> VFunction
-updateInstructionF instr bn func =
+updateInstructionF :: VInstruction -> VFunction -> VFunction
+updateInstructionF instr func =
   let updated :: Maybe VFunction =
         do
-          block <- HashMap.lookup bn (blocks func)
-          block2 <- return $ block
-          func2 <- return $ func{blocks=(HashMap.insert bn block2 (blocks func)),functionInstructions=(HashMap.insert (getName instr) instr (functionInstructions func))}
+          func2 <- return $ func{functionInstructions=(HashMap.insert (getName instr) instr (functionInstructions func))}
           return $ func2
       in case updated of
         Just func2 -> func2
@@ -989,6 +1034,26 @@ createBlock str builder =
         Just builder -> builder
         Nothing -> ("",builder)
 
+-- is the instruction pure with respect to the global var s in that do we know for sure that the instruction won't modify s
+isPureWRT :: VInstruction -> String -> PModule -> Bool
+isPureWRT (VUnOp _ _ _ ) s pm = True
+isPureWRT (VBinOp _ _ _ _ ) s pm = True
+isPureWRT (VStore _ _ loc) s pm = loc /= GlobalRef s
+isPureWRT (VLookup _ _) s pm = True
+isPureWRT (VAllocation _ _ _) s pm = True
+isPureWRT (VArrayStore _ _ loc _) s pm = loc /= GlobalRef s
+isPureWRT (VArrayLookup _ _ _) s pm = True
+isPureWRT (VArrayLen _ _) s pm = True
+isPureWRT (VReturn _ _) s pm = True
+isPureWRT (VCondBranch _ _ _ _) s pm = True
+isPureWRT (VUncondBranch _ _) s pm = True
+isPureWRT (VMethodCall _ {-isCallout-} True fname args) s pm = all (\x -> x /= (GlobalRef s) ) args
+isPureWRT (VMethodCall _ {-isCallout-} False fname args) s pm = ( all (\x -> x /= (GlobalRef s) ) args ) && 
+  let fun = (HashMap.!) (functions pm) fname
+      insts = HashMap.elems $ (functionInstructions fun)
+      in all (\x -> isPureWRT x s pm) insts
+isPureWRT (VUnreachable _ ) s pm = True
+isPureWRT (VPHINode _ _) s pm = True
 
 -- assume no function exists with name currently
 createFunction :: String -> VType -> [VType] -> Builder -> Builder
