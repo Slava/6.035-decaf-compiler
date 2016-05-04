@@ -254,10 +254,10 @@ cse_block func block =
                     VUnOp reg op arg ->
                       let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
                       (var2val_, nextVal_, show (op, val), reg, VUnOp reg op (lookupVal val2reg val arg), True)
-                    VBinOp reg op arg1 arg2 -> 
+                    VBinOp reg op arg1_ arg2_ -> 
+                      let (arg1, arg2) = if (op == "+" || op == "*") && arg1_ > arg2_ then (arg2_, arg1_) else (arg1_, arg2_) in
                       let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
                       let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
-                      -- TODO order args?
                       (var2val__, nextVal__, show (op, val1, val2), reg, VBinOp reg op (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2), True)
                     VArrayLookup reg arg1 arg2 ->
                       let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
