@@ -217,7 +217,8 @@ dce builder =
         in builder{pmod=pm2}
 
 cse_function :: VFunction -> VFunction
-cse_function func = func
+cse_function func =
+  HashMap.foldl (\accFunc block -> cse_block accFunc block) func (blocks func)
 
 dce_function :: VFunction -> VFunction
 dce_function func =
@@ -225,6 +226,71 @@ dce_function func =
         if (length $ getUses instr accFunc) == 0 && (isPure instr)
             then deleteInstruction instr accFunc
             else accFunc) func (HashMap.elems $ functionInstructions func)
+
+cse_block :: VFunction -> VBlock -> VFunction
+cse_block func block =
+  let initState ::
+        (HashMap.Map String String,
+         HashMap.Map String String,
+         HashMap.Map String String,
+         Int,
+         VFunction) = (HashMap.empty, HashMap.empty, HashMap.empty, 0, func)
+      genVar2Val = \var2val nextVal ref ->
+        let valMaybe = HashMap.lookup (show ref) var2val in
+        case valMaybe of
+          Just x -> (var2val, nextVal, x)
+          Nothing -> let newVal = "t" ++ (show nextVal) in
+            (HashMap.insert (show ref) newVal var2val, nextVal + 1, newVal)
+      lookupVal = \val2reg val ref ->
+        let regMaybe = HashMap.lookup val val2reg in
+        case regMaybe of
+          Just regStr -> InstRef regStr
+          Nothing -> ref
+      foldf = (\(var2val, expr2reg, val2reg, nextVal, func) instrName ->
+        let result = do
+              instr <- HashMap.lookup instrName (functionInstructions func)
+              (var2val2, nextVal2, exprStr, reg, updatedInstr) <- case instr of
+                VUnOp reg op arg ->
+                  let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
+                  Just (var2val_, nextVal_, show (op, val), reg, VUnOp reg op (lookupVal val2reg val arg))
+                VBinOp reg op arg1 arg2 -> 
+                  let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
+                  let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
+                  -- TODO order args?
+                  Just (var2val__, nextVal__, show (op, val1, val2), reg, VBinOp reg op (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2))
+                VArrayLookup reg arg1 arg2 ->
+                  let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
+                  let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
+                  Just (var2val__, nextVal__, show ("[]", val1, val2), reg, VArrayLookup reg (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2))
+                VArrayLen reg arg ->
+                  let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
+                  Just (var2val_, nextVal_, show ("@", val), reg, VArrayLen reg (lookupVal val2reg val arg))
+                _ -> Nothing
+              let existReg = HashMap.lookup exprStr expr2reg
+              let (retVar2val, retExpr2reg, retVal2reg, retNextVal) = case existReg of
+                    Just someReg -> let someValMaybe = HashMap.lookup someReg var2val2
+                                        someVal = case someValMaybe of
+                                          Just val -> val
+                                          Nothing -> "shouldNeverHappenVal"
+                                    in
+                                      (HashMap.insert reg someVal var2val2,
+                                       expr2reg, val2reg, nextVal2)
+                    Nothing -> let newVal = ("t" ++ (show nextVal2))
+                               in
+                                 (HashMap.insert reg newVal var2val2,
+                                  HashMap.insert exprStr reg expr2reg,
+                                  HashMap.insert newVal reg val2reg,
+                                  nextVal2 + 1)
+              return $ (retVar2val, retExpr2reg, retVal2reg, retNextVal, func{functionInstructions=(HashMap.insert instrName updatedInstr (functionInstructions func))})
+
+            unwrapped = case result of
+              Just unwrpd -> unwrpd
+              Nothing -> (var2val, expr2reg, val2reg, nextVal, func)
+        in
+          unwrapped)
+      (var2val, expr2reg, val2reg, nextVal, nFunc) = foldl foldf initState (blockInstructions block)
+  in
+    nFunc
 
 partitionStoreLoadOther :: VFunction -> [Use] -> ([Use], [Use], [Use])
 partitionStoreLoadOther func uses =
