@@ -79,7 +79,7 @@ data ValueRef = InstRef String
               | GlobalRef String
               | FunctionRef String
               | ArgRef Int String
-  deriving(Eq, Show);
+  deriving(Eq, Show, Ord);
 
 getReferenceName :: ValueRef -> String
 getReferenceName (InstRef a) = a
