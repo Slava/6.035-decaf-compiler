@@ -486,12 +486,14 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
 gmem2reg_function :: PModule -> VFunction -> (PModule, [IO()])
 gmem2reg_function pm func =
   let allocas :: [ValueRef] = HashMap.elems $ HashMap.mapWithKey (\x (t,a) -> GlobalRef x ) $ HashMap.filterWithKey (\x (t,a) -> a == Nothing) (globals pm)
-      foldf = \(pm, func, changed, dbg) alloca@(GlobalRef gv) ->
-        if changed then (pm, func, True, dbg) else
+      foldf = \prevA@(pm, func, changed, dbg) alloca@(GlobalRef gv) ->
+        if changed then prevA else
         -- attempt change
         let uses0 :: [Use] = getUsesValRef alloca func
-            others :: [VInstruction] = filter (\x -> not $ isPureWRT x gv pm) $ HashMap.elems $ functionInstructions func
-            (_, loads0, _) = partitionStoreLoadOther func uses0
+            allInst = HashMap.elems $ functionInstructions func
+            others :: [VInstruction] = filter (\x -> not $ isPureWRT x gv pm) $ allInst
+            (_, loadsm0, _) = partitionStoreLoadOther func uses0
+            loads0 = filter (\x -> ( (blockInstructions ( (HashMap.!) (blocks func) "entry" )) !! 0 ) /= (useInstruction x) ) loadsm0
             lastValueInBlocks :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
             phis :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
             (_, _, pm2, newFunc,changed0, dbg2) = foldl (\init@(phis, bmap, accPm, acc,changed, dbg) loadu -> case do
@@ -508,11 +510,14 @@ gmem2reg_function pm func =
                     Right ((a,dbg2),bmap2, phis2, accPm2) -> (phis2, bmap2, accPm2{functions=(HashMap.insert (getName a) a (functions accPm2))}, a,True, dbg ++ dbg2 )
                 ) (phis, lastValueInBlocks, pm, func,False, []) loads0
             --(newFunc, changed0) = (func, False)
-            dbg3 = dbg ++ dbg2 -- ++ [printf "%s\n" $ show others]-- ++ [printf "Uses %s | loads=%s\n" (show uses0) (show loads0)]
+            dbg3 = dbg ++ dbg2 -- ++ [printf "Uses %s | loads=%s\n" (show uses0) (show loads0)]
         in
           (pm2, newFunc, changed0, dbg3)
       (npm, nfunc, changed, dbgs) = foldl foldf (pm, func, False, []) allocas
-      in (npm, dbgs)
+      dbgs0 = dbgs
+      in if changed then
+         let (npm2, dbg2) = gmem2reg_function npm nfunc in (npm2, dbgs0 ++ dbg2)
+         else (npm, dbgs0)
 
 optimize :: Builder -> Builder
 --optimize b = dce $ cse $ mem2reg b

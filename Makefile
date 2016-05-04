@@ -24,6 +24,7 @@ FILE=./tests/tests/optimizer/input/noise_median.dcf
 FILE=./tests/tests/optimizer/input/segovia_blur.dcf
 FILE=./tests/tests/dataflow/input/cse-17.dcf
 FILE=./tmp.dcf
+FILE=./tests/tests/dataflow/input/cse-16.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t inter $(FILE)
