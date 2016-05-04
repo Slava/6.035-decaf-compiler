@@ -486,12 +486,12 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
 gmem2reg_function :: PModule -> VFunction -> (PModule, [IO()])
 gmem2reg_function pm func =
   let allocas :: [ValueRef] = HashMap.elems $ HashMap.mapWithKey (\x (t,a) -> GlobalRef x ) $ HashMap.filterWithKey (\x (t,a) -> a == Nothing) (globals pm)
-      foldf = \prevA@(pm, func, changed, dbg) alloca@(GlobalRef gv) ->
+      foldf :: (PModule, VFunction, Bool, [IO()]) -> ValueRef -> (PModule, VFunction, Bool, [IO()]) = \prevA@(pm, func, changed, dbg) alloca@(GlobalRef gv) ->
         if changed then prevA else
         -- attempt change
         let uses0 :: [Use] = getUsesValRef alloca func
             allInst = HashMap.elems $ functionInstructions func
-            others :: [VInstruction] = filter (\x -> not $ isPureWRT x gv pm) $ allInst
+            isUse :: (VInstruction -> Bool) = \inst -> not ( isPureWRT inst gv pm )
             (_, loadsm0, _) = partitionStoreLoadOther func uses0
             eblkI = blockInstructions ( (HashMap.!) (blocks func) "entry" )
             (eblkL,_) = foldl (\(acc,f) inst -> if f then (acc,f) else case (HashMap.!) (functionInstructions func) inst of (VLookup _ _) -> (acc++[inst],f); _ -> (acc,True) ) ([], False) eblkI
@@ -500,10 +500,9 @@ gmem2reg_function pm func =
             phis :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
             (_, _, pm2, newFunc,changed0, dbg2) = foldl (\init@(phis, bmap, accPm, acc,changed, dbg) loadu -> case do
                     loadf <- maybeToError2 (getUseInstr acc loadu) $ [] -- [printf "load failed :(\n"]
-                    (phis2, bmap2, accPm2, valM) <- getPreviousStoresInPreds2 phis bmap accPm acc alloca loadf
+                    (phis2, bmap2, accPm2, valM) <- getPreviousStoresInPreds2 isUse phis bmap accPm acc alloca loadf
                     acc2 <- maybeToError2 (HashMap.lookup (getName acc) (functions accPm2)) []
                     val <- maybeToError2 valM []
-                    --val <- getPreviousStoreValue prevStore
                     let replU = replaceAllUses acc2 loadf val
                     let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [])--[printf "PHIS:%s\n%s\nprev ID:%s\nfinID:%s\n" (show phis) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
                     return $ (res,bmap2, phis2, accPm2)
@@ -515,7 +514,7 @@ gmem2reg_function pm func =
             dbg3 = dbg ++ dbg2 -- ++ [printf "Uses %s | loads=%s\n" (show uses0) (show loads0)]
         in
           (pm2, newFunc, changed0, dbg3)
-      (npm, nfunc, changed, dbgs) = foldl foldf (pm, func, False, []) allocas
+      (npm, nfunc, changed, dbgs) :: (PModule, VFunction, Bool, [IO()]) = foldl foldf (pm, func, False, []) allocas
       dbgs0 = dbgs
       in if changed then
          let (npm2, dbg2) = gmem2reg_function npm nfunc in (npm2, dbgs0 ++ dbg2)
@@ -551,17 +550,17 @@ storesToBlockVals func stores =
 slice from to xs = take (to - from + 1) (drop from xs)
 
 -- Helps eliminates unnecessary loads.
-getPreviousStoreInBlock2 :: PModule -> VFunction -> ValueRef -> VInstruction -> Either [IO()] (Maybe ValueRef)
-getPreviousStoreInBlock2 pm func alloca@(GlobalRef gb) instr =
+getPreviousStoreInBlock2 :: ( VInstruction -> Bool ) -> VFunction -> ValueRef -> VInstruction -> Either [IO()] (Maybe ValueRef)
+getPreviousStoreInBlock2 isUse func alloca instr =
     do
         let prevInstrs :: [VInstruction] = getInstructionsBefore func instr
-        lastOther <- foldl (\acc inst -> if not $ isPureWRT inst gb pm then Right inst else acc ) (Left []) prevInstrs
+        lastOther <- foldl (\acc inst -> if isUse inst then Right inst else acc ) (Left []) prevInstrs
         let val = case lastOther of VStore _ a b -> if b == alloca then Just a else Nothing; _ -> Nothing
         return $ val
 
-getPreviousStoresInPreds2 :: HashMap.Map String (Maybe ValueRef) -> HashMap.Map String (Maybe ValueRef) -> PModule -> VFunction -> ValueRef -> VInstruction -> Either [IO()] (HashMap.Map String (Maybe ValueRef), HashMap.Map String (Maybe ValueRef), PModule, Maybe ValueRef)
-getPreviousStoresInPreds2 phis bmap pm func alloca instr =
-    let prevStoreInBlock = getPreviousStoreInBlock2 pm func alloca instr
+getPreviousStoresInPreds2 :: ( VInstruction -> Bool ) -> HashMap.Map String (Maybe ValueRef) -> HashMap.Map String (Maybe ValueRef) -> PModule -> VFunction -> ValueRef -> VInstruction -> Either [IO()] (HashMap.Map String (Maybe ValueRef), HashMap.Map String (Maybe ValueRef), PModule, Maybe ValueRef)
+getPreviousStoresInPreds2 isUse phis bmap pm func alloca instr =
+    let prevStoreInBlock = getPreviousStoreInBlock2 isUse func alloca instr
         in case prevStoreInBlock of
              Right p -> Right (phis, bmap, pm, p)
              Left _ ->
@@ -601,7 +600,7 @@ getPreviousStoresInPreds2 phis bmap pm func alloca instr =
                                                    in case lk of
                                                      Just a -> (Right pm, accStores ++ [a], bmap, phis )
                                                      Nothing ->
-                                                       let axc = getPreviousStoresInPreds2 phis bmap pm f2 alloca lastInstr
+                                                       let axc = getPreviousStoresInPreds2 isUse phis bmap pm f2 alloca lastInstr
                                                            in case axc of
                                                              Left errs -> (Left errs, [], bmap, phis)
                                                              Right (phis2, bm2, pm2, val) ->
@@ -627,7 +626,6 @@ getPreviousStoresInPreds2 phis bmap pm func alloca instr =
                                                           nf = deleteInstruction phi f2
                                                           fpm :: PModule = npm{functions=(HashMap.insert (getName nf) nf (functions npm))}
                                                           in Right (phisF, bmapF, fpm, Just val)
--- -}
                                                    else
                                                       let mapper :: HashMap.Map String ValueRef = HashMap.fromList $ zip preds nl
                                                           bmapF = bmap2
@@ -635,7 +633,6 @@ getPreviousStoresInPreds2 phis bmap pm func alloca instr =
                                                           nf = updateInstructionF (VPHINode (getName phi) mapper ) f
                                                           fpm :: PModule = npm{functions=(HashMap.insert (getName nf) nf (functions npm))}
                                                           in Right (phisF, bmapF, fpm, Just $ InstRef $ getName phi)
--- -}
 
 blockDominatorsCompute :: HashMap.Map String (Set.Set String) -> VFunction -> HashMap.Map String (Set.Set String)
 blockDominatorsCompute state func =

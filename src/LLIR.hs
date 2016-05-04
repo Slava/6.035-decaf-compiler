@@ -436,6 +436,14 @@ getPHIs fun blk =
         VPHINode _ _ -> True
         _ -> False) insts
 
+getArrayAllocas :: VFunction -> [VInstruction]
+getArrayAllocas fun =
+  let instmap = functionInstructions fun
+      insts = HashMap.elems instmap
+      in filter (\x -> case x of
+        VAllocation _ _ (Just a) -> True
+        _ -> False) insts
+
 getAllocas :: VFunction -> [VInstruction]
 getAllocas fun =
   let instmap = functionInstructions fun
@@ -1051,7 +1059,9 @@ isPureWRT (VMethodCall _ {-isCallout-} True fname args) s pm = all (\x -> x /= (
 isPureWRT (VMethodCall _ {-isCallout-} False fname args) s pm = ( all (\x -> x /= (GlobalRef s) ) args ) && 
   let fun = (HashMap.!) (functions pm) fname
       insts = HashMap.elems $ (functionInstructions fun)
-      in all (\x -> isPureWRT x s pm) insts
+      in all (\x -> case x of
+                      (VMethodCall _ _ fname2 args2) -> if fname2==fname then True else isPureWRT x s pm
+                      _ -> isPureWRT x s pm) insts
 isPureWRT (VUnreachable _ ) s pm = True
 isPureWRT (VPHINode _ _) s pm = True
 
