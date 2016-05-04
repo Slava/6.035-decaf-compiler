@@ -493,7 +493,9 @@ gmem2reg_function pm func =
             allInst = HashMap.elems $ functionInstructions func
             others :: [VInstruction] = filter (\x -> not $ isPureWRT x gv pm) $ allInst
             (_, loadsm0, _) = partitionStoreLoadOther func uses0
-            loads0 = filter (\x -> ( (blockInstructions ( (HashMap.!) (blocks func) "entry" )) !! 0 ) /= (useInstruction x) ) loadsm0
+            eblkI = blockInstructions ( (HashMap.!) (blocks func) "entry" )
+            (eblkL,_) = foldl (\(acc,f) inst -> if f then (acc,f) else case (HashMap.!) (functionInstructions func) inst of (VLookup _ _) -> (acc++[inst],f); _ -> (acc,True) ) ([], False) eblkI
+            loads0 = filter (\x -> not $ elem (useInstruction x) eblkL ) loadsm0
             lastValueInBlocks :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
             phis :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
             (_, _, pm2, newFunc,changed0, dbg2) = foldl (\init@(phis, bmap, accPm, acc,changed, dbg) loadu -> case do
