@@ -70,6 +70,30 @@ cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func =
         f3 :: VFunction = if 0 == (length $ blockPredecessors oldB) then deleteBlock oldB f2 else f2
         in (f3, True)
 
+cfold_inst inst@(VUncondBranch name succ) func = 
+    let post = hml (blocks func) succ $ printf "cfold rpred\n %s\n" (show func)
+        in if 1 /= (length $ blockPredecessors post) then (func, False)
+        else let
+          block :: VBlock = getParentBlock inst func
+          bname = getName block
+          pi = blockInstructions block
+          block2 :: VBlock = block{blockSuccessors=(blockSuccessors post), blockInstructions=(take ((length pi)-1) pi) ++ (blockInstructions post)}
+          f0 :: VFunction = updateBlockF block2 func
+          f1 :: VFunction = deleteInstruction (hml (functionInstructions f0) (last pi) "upd") f0
+          f2 :: VFunction = foldl (\f bn->
+             let b = hml (blocks f) bn "cfold bfix"
+                 b2 = b{blockPredecessors=(delete succ (blockPredecessors b)) ++ [bname]}
+                 phis = getPHIs f bn
+                 f2 = f{blocks=HashMap.insert bn b2 (blocks f)}
+                 nf = foldl (\f (VPHINode nam hm) ->
+                    let hm2 = HashMap.insert bname (hml hm succ "mergebb") hm
+                        hm3 = HashMap.delete succ hm2 
+                        in updateInstructionF (VPHINode nam hm3 ) bn f ) f2 phis
+                 in nf ) f1 (blockSuccessors post)
+          f3 = deleteBlockNI post f2
+          in (f3, True)
+
+
 cfold_inst phi@(VPHINode n mp) func =
   let vals = HashMap.elems mp
       nphi :: [ValueRef] = filter (\x -> x /= (InstRef $ n) ) vals
@@ -79,7 +103,7 @@ cfold_inst phi@(VPHINode n mp) func =
            (func,False)
 
 
-cfold_inst inst@(VUnaryOp name op op1) func =
+cfold_inst inst@(VUnOp name op op1) func =
     if (isConstInt op1) then
        let x1 = getConstInt op1
            u1 :: Word64 = fromIntegral x1

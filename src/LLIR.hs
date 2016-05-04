@@ -331,6 +331,7 @@ data Use = Use {
   useIndex :: Int
 } deriving(Eq, Show);
 
+
 replaceUse :: VFunction -> Use -> ValueRef -> VFunction
 replaceUse func use val = replaceInstrOp func (useInstruction use) (useIndex use) val
 
@@ -425,6 +426,12 @@ data VFunction    = VFunction {
   blocks    :: HashMap.Map String VBlock,
   blockOrder :: [String]
 } deriving (Eq);
+
+deleteBlockNI :: VBlock -> VFunction -> VFunction
+deleteBlockNI block func =
+  let name = getName block
+      blcks = HashMap.delete name $ blocks func
+      in func{blocks=blcks, blockOrder=delete name (blockOrder func)}
 
 deleteBlock :: VBlock -> VFunction -> VFunction
 deleteBlock block func =
@@ -630,7 +637,7 @@ removePredecessor block pred func =
         then
         -- nuke phis
           let tp = npred !! 0
-              fx :: VFunction -> VInstruction -> VFunction = ( replaceAndRemoveF (\(VPHINode _ mp )-> hml mp tp "llir rpred") )
+              fx :: VFunction -> VInstruction -> VFunction = ( replaceAndRemoveF (\(VPHINode _ mp ) -> hml mp tp "llir rpred") )
               f1 :: VFunction = foldl fx f0 phis
               in f1
         else
