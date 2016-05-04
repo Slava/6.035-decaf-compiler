@@ -68,7 +68,7 @@ forceInt (Just a) = a
 forceInt _ = error "cant force nothing from maybe"
 
 cfold_inst :: VInstruction -> VFunction -> (VFunction,Bool)
-cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func = 
+cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func =
     let block :: VBlock = getParentBlock inst func
         dest :: String = if b then tb else fb
         ndest :: String = if b then fb else tb
@@ -78,7 +78,7 @@ cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func =
         f2 :: VFunction = updateInstructionF (VUncondBranch name dest) f1
         in (f2, True)
 
-cfold_inst inst@(VUncondBranch name succ) func = 
+cfold_inst inst@(VUncondBranch name succ) func =
     let post = hml (blocks func) succ $ printf "cfold rpred\n %s\n" (show func)
         in if 1 /= (length $ blockPredecessors post) then (func, False)
         else let
@@ -95,7 +95,7 @@ cfold_inst inst@(VUncondBranch name succ) func =
                  f2 = f{blocks=HashMap.insert bn b2 (blocks f)}
                  nf = foldl (\f (VPHINode nam hm) ->
                     let hm2 = HashMap.insert bname (hml hm succ "mergebb") hm
-                        hm3 = HashMap.delete succ hm2 
+                        hm3 = HashMap.delete succ hm2
                         in updateInstructionF (VPHINode nam hm3 ) f ) f2 phis
                  in nf ) f1 (blockSuccessors post)
           f3 = deleteBlockNI post f2
@@ -141,7 +141,7 @@ cfold_inst inst@(VBinOp name op op1 op2) func =
            f2 = deleteInstruction inst f1
            in (f2,True)
     else if ( (op == "-") ) && (isConstInt op1) && (getConstInt op1 == 0) then
-       let f2 :: VFunction = updateInstructionF (VUnOp name "-" op2 ) func 
+       let f2 :: VFunction = updateInstructionF (VUnOp name "-" op2 ) func
            in (f2,True)
     else if (isConstInt op1) && (isConstInt op2) then
        let x1 = getConstInt op1
@@ -186,8 +186,8 @@ cfold_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> VFunctio
 cfold_function globals func =
   let insts = functionInstructions func
       foldf = \(func, changed) inst ->
-        if changed then (func, True) else 
-        case inst of 
+        if changed then (func, True) else
+        case inst of
           VArrayLen _ al ->
             case al of
               GlobalRef nam ->
@@ -274,7 +274,7 @@ cse_block func block =
                     VUnOp reg op arg ->
                       let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
                       (var2val_, nextVal_, show (op, val), reg, VUnOp reg op (lookupVal val2reg val arg), True)
-                    VBinOp reg op arg1_ arg2_ -> 
+                    VBinOp reg op arg1_ arg2_ ->
                       let (arg1, arg2) = if (op == "+" || op == "*") && arg1_ > arg2_ then (arg2_, arg1_) else (arg1_, arg2_) in
                       let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
                       let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
@@ -519,7 +519,7 @@ getPreviousStoresInPreds2 isUse phis bmap pm func alloca instr =
                                            ) (Right npm, [], bmap, phis2) preds
                                        in case newPmOrErrors of
                                          Left errs -> Left errs
-                                         Right npm -> 
+                                         Right npm ->
 --                                           if "%15" == getName instr then error $ printf "npm:%s\nstores:%s\nbmap2:%s\n,phis3:%s\n" (show npm) (show stores) (show bmap2) (show phis3) else
                                            let nl = Data.Maybe.catMaybes stores
                                                in
@@ -580,3 +580,15 @@ blockDominators func =
         HashMap.empty (blocks func)
   in
     blockDominatorsCompute initState func
+
+invertMap :: HashMap.Map String (Set.Set String) -> HashMap.Map String (Set.Set String)
+invertMap normalMap =
+    foldl
+    (\accMap (key, valueSet) ->
+        Set.fold
+        (\value accMap2 ->
+            case HashMap.lookup value accMap2 of
+                Just v -> HashMap.insert value (v `Set.union` (Set.singleton key)) accMap2
+                Nothing -> HashMap.insert value (Set.singleton key) accMap2)
+        accMap valueSet)
+    HashMap.empty (HashMap.assocs normalMap)
