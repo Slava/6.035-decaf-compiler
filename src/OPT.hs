@@ -78,6 +78,25 @@ cfold_inst phi@(VPHINode n mp) func =
          else
            (func,False)
 
+
+cfold_inst inst@(VUnaryOp name op op1) func =
+    if (isConstInt op1) then
+       let x1 = getConstInt op1
+           u1 :: Word64 = fromIntegral x1
+           rval = case op of
+              "-" -> ConstInt $ -x1
+           f1 = replaceAllUses func inst rval
+           f2 = deleteInstruction inst f1
+           in (f2,True)
+    else if (isConstBool op1) then
+       let x1 = getConstBool op1
+           rval = case op of
+              "!" -> ConstBool $ not x1
+           f1 = replaceAllUses func inst rval
+           f2 = deleteInstruction inst f1
+           in (f2,True)
+    else (func,False)
+
 cfold_inst inst@(VBinOp name op op1 op2) func =
     if (isConstInt op1) && (isConstInt op2) then
        let x1 = getConstInt op1
