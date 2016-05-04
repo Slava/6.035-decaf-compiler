@@ -10,6 +10,7 @@ import qualified LLIR
 import LLIR
 import Text.Printf
 import Data.Word
+import Debug.Trace
 
 -- NEED TO TO MEM2REG AS REQUISITE
 mem2reg :: Builder -> Builder
@@ -230,58 +231,68 @@ dce_function func =
 cse_block :: VFunction -> VBlock -> VFunction
 cse_block func block =
   let initState ::
-        (HashMap.Map String String,
+        (HashMap.Map ValueRef String,
          HashMap.Map String String,
          HashMap.Map String String,
          Int,
          VFunction) = (HashMap.empty, HashMap.empty, HashMap.empty, 0, func)
       genVar2Val = \var2val nextVal ref ->
-        let valMaybe = HashMap.lookup (show ref) var2val in
+        let valMaybe = HashMap.lookup ref var2val in
         case valMaybe of
           Just x -> (var2val, nextVal, x)
           Nothing -> let newVal = "t" ++ (show nextVal) in
-            (HashMap.insert (show ref) newVal var2val, nextVal + 1, newVal)
+            (HashMap.insert ref newVal var2val, nextVal + 1, newVal)
       lookupVal = \val2reg val ref ->
         let regMaybe = HashMap.lookup val val2reg in
         case regMaybe of
           Just regStr -> InstRef regStr
           Nothing -> ref
-      foldf = (\(var2val, expr2reg, val2reg, nextVal, func) instrName ->
+      foldf = (\(var2val :: HashMap.Map ValueRef String, expr2reg :: HashMap.Map String String, val2reg :: HashMap.Map String String, nextVal :: Int, func :: VFunction) instrName ->
         let result = do
               instr <- HashMap.lookup instrName (functionInstructions func)
-              (var2val2, nextVal2, exprStr, reg, updatedInstr) <- case instr of
-                VUnOp reg op arg ->
-                  let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
-                  Just (var2val_, nextVal_, show (op, val), reg, VUnOp reg op (lookupVal val2reg val arg))
-                VBinOp reg op arg1 arg2 -> 
-                  let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
-                  let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
-                  -- TODO order args?
-                  Just (var2val__, nextVal__, show (op, val1, val2), reg, VBinOp reg op (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2))
-                VArrayLookup reg arg1 arg2 ->
-                  let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
-                  let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
-                  Just (var2val__, nextVal__, show ("[]", val1, val2), reg, VArrayLookup reg (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2))
-                VArrayLen reg arg ->
-                  let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
-                  Just (var2val_, nextVal_, show ("@", val), reg, VArrayLen reg (lookupVal val2reg val arg))
-                _ -> Nothing
+              let (var2val2, nextVal2, exprStr, reg, updatedInstr, pure) = case instr of
+                    VUnOp reg op arg ->
+                      let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
+                      (var2val_, nextVal_, show (op, val), reg, VUnOp reg op (lookupVal val2reg val arg), True)
+                    VBinOp reg op arg1 arg2 -> 
+                      let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
+                      let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
+                      -- TODO order args?
+                      (var2val__, nextVal__, show (op, val1, val2), reg, VBinOp reg op (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2), True)
+                    VArrayLookup reg arg1 arg2 ->
+                      let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
+                      let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
+                      (var2val__, nextVal__, show ("[]", val1, val2), reg, VArrayLookup reg (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2), True)
+                    VArrayLen reg arg ->
+                      let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
+                      (var2val_, nextVal_, show ("@", val), reg, VArrayLen reg (lookupVal val2reg val arg), True)
+                    VMethodCall reg isCallout fn args ->
+                      let nargs = map (\arg -> let (_, _, val) = (genVar2Val var2val nextVal arg) in lookupVal val2reg val arg) args in
+                      (var2val, nextVal, "n/a", reg, VMethodCall reg isCallout fn nargs, False)
+                    VReturn reg mref ->
+                      case mref of
+                        Just ref ->
+                          let (_, _, val) = (genVar2Val var2val nextVal ref) in
+                          (var2val, nextVal, "n/a", reg, VReturn reg (Just (lookupVal val2reg val ref)), False)
+                        Nothing -> (var2val, nextVal, "n/a", reg, VReturn reg mref, False)
+                    x -> (var2val, nextVal, "n/a", instrName, x, False)
               let existReg = HashMap.lookup exprStr expr2reg
               let (retVar2val, retExpr2reg, retVal2reg, retNextVal) = case existReg of
-                    Just someReg -> let someValMaybe = HashMap.lookup someReg var2val2
+                    Just someReg -> let someValMaybe = HashMap.lookup (InstRef someReg) var2val2
                                         someVal = case someValMaybe of
                                           Just val -> val
                                           Nothing -> "shouldNeverHappenVal"
                                     in
-                                      (HashMap.insert reg someVal var2val2,
+                                      (HashMap.insert (InstRef reg) someVal var2val2,
                                        expr2reg, val2reg, nextVal2)
                     Nothing -> let newVal = ("t" ++ (show nextVal2))
                                in
-                                 (HashMap.insert reg newVal var2val2,
+                                 (HashMap.insert (InstRef reg) newVal var2val2,
                                   HashMap.insert exprStr reg expr2reg,
                                   HashMap.insert newVal reg val2reg,
                                   nextVal2 + 1)
-              return $ (retVar2val, retExpr2reg, retVal2reg, retNextVal, func{functionInstructions=(HashMap.insert instrName updatedInstr (functionInstructions func))})
+              let updatedFunc = func{functionInstructions=(HashMap.insert instrName updatedInstr (functionInstructions func))}
+              return $ if pure then (retVar2val, retExpr2reg, retVal2reg, retNextVal, updatedFunc) else (var2val, expr2reg, val2reg, nextVal, updatedFunc)
 
             unwrapped = case result of
               Just unwrpd -> unwrpd
