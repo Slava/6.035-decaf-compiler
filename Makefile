@@ -21,10 +21,11 @@ FILE=./tests/tests/codegen/input/06-control-flow.dcf
 FILE=./tmp.dcf
 FILE=./tests/tests/codegen/input/11-big-array.dcf
 FILE=./tests/tests/optimizer/input/noise_median.dcf
+FILE=./tests/tests/optimizer/input/segovia_blur.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t inter $(FILE)
 	./run.sh -t opt $(FILE)
-	./run.sh -t assembly $(FILE) | tee out.s
-	gcc -o a.out out.s
-	./a.out
+#	./run.sh -t assembly $(FILE) | tee out.s
+#	gcc -o a.out out.s
+#	./a.out

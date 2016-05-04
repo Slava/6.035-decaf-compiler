@@ -57,18 +57,74 @@ forceInt :: Maybe Int -> Int
 forceInt (Just a) = a
 forceInt _ = error "cant force nothing from maybe"
 
-hml :: Ord a => Show b => Show a => HashMap.Map a b -> a -> String -> b
-hml a b l = case HashMap.lookup b a of
-  Nothing -> error ( printf "%s: Key %s not in map %s\n" l (show b) (show a) )
-  Just c -> c
+cfold_inst :: VInstruction -> VFunction -> (VFunction,Bool)
+cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func = 
+    let block :: VBlock = getParentBlock inst func
+        dest :: String = if b then tb else fb
+        ndest :: String = if b then fb else tb
+        block2 :: VBlock = block{blockSuccessors=[ndest]}
+        f0 :: VFunction = updateBlockF block2 func
+        f1 :: VFunction = removePredecessor (hml (blocks f0) ndest "cfold rpred") (getName block) f0
+        f2 :: VFunction = updateInstructionF (VUncondBranch name dest) (getName block) f1
+        oldB :: VBlock  = hml (blocks f2) ndest "cfold2"
+        f3 :: VFunction = if 0 == (length $ blockPredecessors oldB) then deleteBlock oldB f2 else f2
+        in (f3, True)
+
+cfold_inst phi@(VPHINode n mp) func =
+  let vals = HashMap.elems mp
+      nphi :: [ValueRef] = filter (\x -> x /= (InstRef $ n) ) vals
+      in if all (== head nphi) (tail nphi) then
+           (replaceAndRemove (head nphi) func phi,True)
+         else
+           (func,False)
+
+cfold_inst inst@(VBinOp name op op1 op2) func =
+    if (isConstInt op1) && (isConstInt op2) then
+       let x1 = getConstInt op1
+           x2 = getConstInt op2
+           u1 :: Word64 = fromIntegral x1
+           u2 :: Word64 = fromIntegral x2
+           rval = case op of
+              "==" -> ConstBool $ x1 == x2
+              "!=" -> ConstBool $ x1 /= x2
+              "<=" -> ConstBool $ x1 <= x2
+              "<" -> ConstBool $ x1 < x2
+              ">=" -> ConstBool $ x1 >= x2
+              ">" -> ConstBool $ x1 > x2
+              "u<=" -> ConstBool $ u1 <= u2
+              "u<" -> ConstBool $ u1 < u2
+              "u>=" -> ConstBool $ u1 >= u2
+              "u>" -> ConstBool $ u1 > u2
+              "+" -> ConstInt $ x1 + x2
+              "-" -> ConstInt $ x1 - x2
+              "*" -> ConstInt $ x1 * x2
+              "/" -> ConstInt $ x1 `div` x2
+              "%" -> ConstInt $ x1 `mod` x2
+           f1 = replaceAllUses func inst rval
+           f2 = deleteInstruction inst f1
+           in (f2,True)
+    else if (isConstBool op1) && (isConstBool op2) then
+       let x1 = getConstBool op1
+           x2 = getConstBool op2
+           rval = case op of
+              "==" -> ConstBool $ x1 == x2
+              "!=" -> ConstBool $ x1 /= x2
+              "&" -> ConstBool $ x1 && x2
+              "|" -> ConstBool $ x1 || x2
+           f1 = replaceAllUses func inst rval
+           f2 = deleteInstruction inst f1
+           in (f2,True)
+    else (func,False)
+
+cfold_inst _ func = (func, False)
 
 cfold_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> VFunction
 cfold_function globals func =
   let insts = functionInstructions func
       foldf = \(func, changed) inst ->
-        if changed then (func, True) else
-        case inst of
-          VArrayLen name al ->
+        if changed then (func, True) else 
+        case inst of 
+          VArrayLen _ al ->
             case al of
               GlobalRef nam ->
                 let rval = ConstInt$ toInteger $ forceInt $ snd $ hml globals nam "globalref"
@@ -86,44 +142,7 @@ cfold_function globals func =
                     f2 = deleteInstruction inst f1
                     in (f2,True)
               a -> error $ printf "Invalid thing to take len of %s\n:inst:%s\nfunc:%s" (show a) (show inst) (show func)
-          VBinOp name op op1 op2 ->
-            if (isConstInt op1) && (isConstInt op2) then
-               let x1 = getConstInt op1
-                   x2 = getConstInt op2
-                   u1 :: Word64 = fromIntegral x1
-                   u2 :: Word64 = fromIntegral x2
-                   rval = case op of
-                      "==" -> ConstBool $ x1 == x2
-                      "!=" -> ConstBool $ x1 /= x2
-                      "<=" -> ConstBool $ x1 <= x2
-                      "<" -> ConstBool $ x1 < x2
-                      ">=" -> ConstBool $ x1 >= x2
-                      ">" -> ConstBool $ x1 > x2
-                      "u<=" -> ConstBool $ u1 <= u2
-                      "u<" -> ConstBool $ u1 < u2
-                      "u>=" -> ConstBool $ u1 >= u2
-                      "u>" -> ConstBool $ u1 > u2
-                      "+" -> ConstInt $ x1 + x2
-                      "-" -> ConstInt $ x1 - x2
-                      "*" -> ConstInt $ x1 * x2
-                      "/" -> ConstInt $ x1 `div` x2
-                      "%" -> ConstInt $ x1 `mod` x2
-                   f1 = replaceAllUses func inst rval
-                   f2 = deleteInstruction inst f1
-                   in (f2,True)
-            else if (isConstBool op1) && (isConstBool op2) then
-               let x1 = getConstBool op1
-                   x2 = getConstBool op2
-                   rval = case op of
-                      "==" -> ConstBool $ x1 == x2
-                      "!=" -> ConstBool $ x1 /= x2
-                      "&" -> ConstBool $ x1 && x2
-                      "|" -> ConstBool $ x1 || x2
-                   f1 = replaceAllUses func inst rval
-                   f2 = deleteInstruction inst f1
-                   in (f2,True)
-            else (func,changed)
-          _ -> (func,changed)
+          _ -> cfold_inst inst func
       (nfunc, changed) = foldl foldf (func, False) insts
       in if changed then
          --error (show func)
@@ -308,10 +327,10 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
                                            case accPmOrErrors of
                                              Left errs -> (Left errs, [], bmap, phis)
                                              Right pm ->
-                                               let predBlock :: VBlock = (HashMap.!) funcBlocks p
-                                                   f2 :: VFunction = (HashMap.!) (functions pm) (getName func)
+                                               let predBlock :: VBlock = hml funcBlocks p "pred"
+                                                   f2 :: VFunction = hml (functions pm) (getName func) "pred2"
                                                    lastInstrName :: String = last $ blockInstructions predBlock
-                                                   lastInstr = (HashMap.!) (functionInstructions f2) lastInstrName
+                                                   lastInstr = hml (functionInstructions f2) lastInstrName "lin"
                                                    lk :: Maybe (Maybe ValueRef) = HashMap.lookup p bmap
                                                    in case lk of
                                                      Just a -> (Right pm, accStores ++ [a], bmap, phis )
@@ -332,7 +351,7 @@ getPreviousStoresInPreds phis bmap pm func alloca instr =
                                                if length nl /= length stores then Right (phis, bmap, pm, Nothing)
                                                else
                                                let nphi = filter (\x -> x /= (InstRef $ getName phi) ) nl
-                                                   f = (HashMap.!) (functions npm) (getName func)
+                                                   f = hml (functions npm) (getName func) "fp"
                                                    in
                                                    if all (== head nphi) (tail nphi) then
                                                       let val = head nphi

@@ -17,10 +17,6 @@ data CGContext = CGContext {
   globalArrays :: [(String, Int)]
 } deriving(Eq, Show);
 
-hml a b l = case HashMap.lookup b a of
-  Nothing -> error ( printf "%s: Key %s not in map %s\n" (show l) (show b) (show a) )
-  Just c -> c
-
 newCGContext :: CGContext
 newCGContext = CGContext (HashMap.empty) 0 []
 
@@ -179,7 +175,7 @@ calculateLocalsSize instrs =
 genFunction :: CGContext -> LLIR.VFunction -> (CGContext, String)
 genFunction cx f =
   let argsLength = length $ LLIR.arguments f
-      instrs = concat $ map (\x -> snd $ getBlockInstrs f $ (HashMap.!) (LLIR.blocks f) x ) (LLIR.blockOrder f)
+      instrs = concat $ map (\x -> snd $ getBlockInstrs f $ hml (LLIR.blocks f) x "getblocks" ) (LLIR.blockOrder f)
       nzInst = (filter (\x -> 0 /= (localSize x)) instrs)
       localsSize = (8*argsLength) + (calculateLocalsSize nzInst)
       ncx0 = foldl (\cx (idx, arg) ->

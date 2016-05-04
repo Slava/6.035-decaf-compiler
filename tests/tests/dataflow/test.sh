@@ -1,7 +1,8 @@
 #!/bin/sh
 
 runcompiler() {
-    $(git rev-parse --show-toplevel)/run.sh --opt=all --target=assembly -o $2 $1
+    $(git rev-parse --show-toplevel)/run.sh --target=assembly -o $2 $1
+#    $(git rev-parse --show-toplevel)/run.sh --opt=all --target=assembly -o $2 $1
 }
 
 fail=0
@@ -26,6 +27,9 @@ for file in `dirname $0`/input/*.dcf; do
         fi
       else
         msg="Program failed to run.";
+	printf "rerunning %s\n" $binary
+        echo $binary
+        exit
       fi
     else
       msg="Program failed to assemble.";

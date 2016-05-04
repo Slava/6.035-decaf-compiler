@@ -11,6 +11,7 @@ import Prelude
 import Data.List
 import Data.Maybe
 import Text.Printf (printf)
+
 --import ParseTypes
 import qualified Data.Map as HashMap
 
@@ -350,7 +351,7 @@ getUseInstr :: VFunction -> Use -> Maybe VInstruction
 getUseInstr func use = HashMap.lookup (useInstruction use) (functionInstructions func)
 
 getUseInstr2 :: VFunction -> Use -> VInstruction
-getUseInstr2 func use = (HashMap.!) (functionInstructions func) (useInstruction use)
+getUseInstr2 func use = hml (functionInstructions func) (useInstruction use) "getUseInstr2"
 
 getUseValue :: VFunction -> Use -> Maybe ValueRef
 getUseValue func use =
@@ -393,7 +394,7 @@ instCastU f i = noMaybe $ instCast f i
 getPHIs :: VFunction -> String -> [VInstruction]
 getPHIs fun blk =
   let instmap = functionInstructions fun
-      insts = map (\x -> (HashMap.!) instmap x ) $ blockInstructions $ ((HashMap.!) (blocks fun) blk)
+      insts = map (\x -> hml instmap x "getPhis1") $ blockInstructions $ (hml (blocks fun) blk "getPhis2")
       in filter (\x -> case x of
         VPHINode _ _ -> True
         _ -> False) insts
@@ -425,12 +426,23 @@ data VFunction    = VFunction {
   blockOrder :: [String]
 } deriving (Eq);
 
+deleteBlock :: VBlock -> VFunction -> VFunction
+deleteBlock block func =
+  let name = getName block
+      insts :: HashMap.Map String VInstruction = HashMap.filterWithKey (\k v -> not $ elem k (blockInstructions block) ) (functionInstructions func)
+      blcks = HashMap.delete name $ blocks func
+      in func{blocks=blcks, functionInstructions=insts, blockOrder=delete name (blockOrder func)}
+
+getParentBlock :: VInstruction -> VFunction -> VBlock
+getParentBlock inst func =
+  head $ filter (\x -> elem (getName inst) (blockInstructions x) ) (HashMap.elems $ blocks func)
+
 getInstructionsBefore :: VFunction -> VInstruction -> [VInstruction]
 getInstructionsBefore func instr =
     case do
         let blockName = getInstructionParent func instr
         block <- HashMap.lookup blockName (blocks func)
-        let instrs = map (\name -> (HashMap.!)  (functionInstructions func) name ) (blockInstructions block)
+        let instrs = map (\name -> hml (functionInstructions func) name "getBefore" ) (blockInstructions block)
         index <- elemIndex instr instrs
         return $ take index instrs
     of
@@ -586,6 +598,51 @@ appendInstruction instr builderm =
         Just builder2 -> builder2
         Nothing -> builder0
 
+updateBlockF :: VBlock -> VFunction -> VFunction
+updateBlockF block2 func = func{blocks=(HashMap.insert (getName block2) block2 (blocks func))}
+
+replaceAndRemoveF :: (VInstruction -> ValueRef) -> VFunction -> VInstruction -> VFunction
+replaceAndRemoveF func f inst =
+  let f2 = replaceAllUses f inst (func inst)
+      f3 = deleteInstruction inst f2
+      in f3
+
+replaceAndRemove :: ValueRef -> VFunction -> VInstruction -> VFunction
+replaceAndRemove val f inst =
+  let f2 = replaceAllUses f inst val
+      f3 = deleteInstruction inst f2
+      in f3
+
+
+hml :: Ord a => Show b => Show a => HashMap.Map a b -> a -> String -> b
+hml a b l = case HashMap.lookup b a of
+  Nothing -> error ( printf "%s: Key %s not in map %s\n" l (show b) (show a) )
+  Just c -> c
+
+removePredecessor :: VBlock -> String -> VFunction -> VFunction
+removePredecessor block pred func =
+  let npred = delete pred (blockPredecessors block)
+      block2 = block{blockPredecessors=npred}
+      f0 = updateBlockF block2 func
+      blockName = getName block2
+      phis :: [VInstruction] = getPHIs func blockName
+      in if length npred == 1
+        then
+        -- nuke phis
+          let tp = npred !! 0
+              fx :: VFunction -> VInstruction -> VFunction = ( replaceAndRemoveF (\(VPHINode _ mp )-> hml mp tp "llir rpred") )
+              f1 :: VFunction = foldl fx f0 phis
+              in f1
+        else
+          let f1 = foldl (\f (VPHINode n mp ) ->
+                   let phi = VPHINode n mp
+                       vals = HashMap.elems mp
+                       nphi :: [ValueRef] = filter (\x -> x /= (InstRef $ n) ) vals
+                       in if all (== head nphi) (tail nphi) then
+                            replaceAndRemove (head nphi) f phi
+                          else
+                            updateInstructionF (VPHINode n $ HashMap.delete pred mp) blockName f ) f0 phis
+              in f1
 
 updateInstructionF :: VInstruction -> String -> VFunction -> VFunction
 updateInstructionF instr bn func =
