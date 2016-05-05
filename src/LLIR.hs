@@ -248,11 +248,11 @@ instance Value VInstruction where
       Nothing -> TVoid
       Just a -> returnType a
 
-  valueEq b (VUnOp _ op1 arg1) (VUnOp _ op2 arg2) = ( valueEq b op1 op2 ) && ( valueEq b arg1 arg2 )
-  valueEq b (VBinOp _ op1 a1 b1) (VBinOp _ op2 a2 b2) = ( valueEq b op1 op2 ) && ( valueEq b a1 a2 ) && ( valueEq b b1 b2 )
-  valueEq b (VArrayLen _ op1 ) (VArrayLen _ op2) = ( valueEq b op1 op2 )
-  valueEq b (VPHINode _ a1 ) (VPHINode _ a2) = ((HashMap.keys a1) == (HashMap.keys a2) ) && all (\x -> valueEq b ( (HashMap.!) a1 x ) ( (HashMap.!) a2 x ) ) (HashMap.keys a1)
-  valueEq b (VArrayLen _ a1 ) (VArrayLen _ a2) = valueEq b a1 a2
+  valueEq b (VUnOp _ op1 arg1) (VUnOp _ op2 arg2) = ( op1 == op2 ) && ( arg1 == arg2 )
+  valueEq b (VBinOp _ op1 a1 b1) (VBinOp _ op2 a2 b2) = ( op1 == op2 ) && ( a1 == a2 ) && ( b1 == b2 )
+  valueEq b (VArrayLen _ op1 ) (VArrayLen _ op2) = ( op1 == op2 )
+  valueEq b (VPHINode _ a1 ) (VPHINode _ a2) = ((HashMap.keys a1) == (HashMap.keys a2) ) && all (\x -> ( (HashMap.!) a1 x ) == ( (HashMap.!) a2 x ) ) (HashMap.keys a1)
+  valueEq b (VArrayLen _ a1 ) (VArrayLen _ a2) = a1 == a2
 
   valueEq b _ _ = False
 

@@ -312,6 +312,9 @@ replaceResInstr :: VInstruction -> VInstruction -> VFunction -> VFunction
 replaceResInstr ainstr binstr func =
   cse_replaceUse func (resRef ainstr) (resRef binstr)
 
+selemIndex :: Eq a => a -> [a] -> Int
+selemIndex a b = case elemIndex a b of Just a -> a
+
 cse_function :: VFunction -> VFunction
 cse_function func =
   let blockNames = blockOrder func
@@ -322,15 +325,31 @@ cse_function func =
             vb = (HashMap.!) (blocks f) bn
             getInst = \x -> (HashMap.!) (functionInstructions f) x
             bins = map getInst (blockInstructions vb)
-            (changed,f2) = foldl (\(changed,f) b2 ->
-                let bins2 = map (\x -> (HashMap.!) (functionInstructions f) x) (blockInstructions vb)
+            (changed,f2) = --if bn /= "entry" then error $ printf "%s:%s\n" bn (show doms) else 
+                           foldl (\(changed,f) b2 ->
+                let vb2 = (HashMap.!) (blocks f) b2
+                    bins2 = map (\x -> (HashMap.!) (functionInstructions f) x) (blockInstructions vb2)
                     (c2, f2) = foldl (\(changed,f) inst1 -> if changed then (changed, f) else
-                        foldl (\(changed,f) inst2 -> if changed then (changed,f) else if not $ valueEq f inst1 inst2 then (changed,f) else (True, replaceAndRemove (InstRef $ getName inst2) f inst1 ) ) (False, f) bins
+                        foldl (\(changed,f) inst2 -> --if ( (getName inst2) == "%44" ) && ( (getName inst1) == "%32" ) then error $ printf "bn:%s\ndoms:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show doms) (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f) else 
+                           if changed then (changed,f) else if not $ valueEq f inst1 inst2 then (changed,f) else 
+                             (True, replaceAndRemove (InstRef $ getName inst1) f inst2 ) 
+                           ) (False, f) bins
                       ) (False, f) bins2
                     in (c2, f2)
-              ) (False,f) doms 
-            --insts2 = map () bins
-            in (False, f)
+              ) (False,f) doms
+            in if changed then (changed,f2) else
+              let binsts = (blockInstructions vb)
+                  (c2, f3) = foldl (\(changed,f) inst1 -> if changed then (changed, f) else
+                                    foldl (\(changed,f) inst2 -> if changed then (changed,f) else if (
+                          let repBName = getName inst2
+                              repDName = getName inst1
+                              in (selemIndex repBName binsts) >= (selemIndex repDName binsts)
+                               ) || (not $ valueEq f inst1 inst2) then (changed,f) else 
+                                 --error $ printf "bn:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f)
+                                 (True, replaceAndRemove (InstRef $ getName inst2) f inst1 ) 
+                         ) (False, f) bins
+                      ) (changed, f2) bins
+                  in (c2, f3)
         ) (False,func) blockNames
       in if changed then cse_function f2 else f2
 
