@@ -12,6 +12,7 @@ PARTICULAR PURPOSE.  See the X11 license for more details. -}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
+import Debug.Trace
 import Prelude hiding (readFile)
 import qualified Prelude
 
@@ -35,7 +36,7 @@ import qualified Scanner
 import qualified SemanticChecker
 import qualified CodeGen
 import qualified OPT
-import qualified RegAlloc
+-- import qualified RegAlloc
 
 import qualified LLIR
 
@@ -44,6 +45,8 @@ import qualified Data.Map
 import Data.Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.ByteString.Lazy (putStrLn)
+import qualified Data.Sequence (Seq, update, filter, fromList)
+import Data.Foldable (toList)
 
 ------------------------ Impure code: Fun with ExceptT ------------------------
 
@@ -146,6 +149,7 @@ semanticCheck configuration input = do
 doOPT :: Configuration -> String -> Either String [IO ()]
 doOPT configuration input = do
     let (errors, tokens) = partitionEithers $ Scanner.scan input
+        optimizer = getOptFunction configuration
     -- If errors occurred, bail out.
     mapM_ (mungeErrorMessage configuration . Left) errors
     -- Otherwise, attempt a parse.
@@ -153,7 +157,7 @@ doOPT configuration input = do
       Left  a -> Left a
       Right ast ->
         let ( mod, ( SemanticChecker.Context ios asts ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other)
-            asts2 = if length ios /=0 then asts else OPT.optimize asts
+            asts2 = if length ios /=0 then asts else optimizer asts
             in
               if length ios /= 0
                 then Right $ (LLIR.debugs asts2) ++ ios
@@ -163,9 +167,34 @@ doOPT configuration input = do
                     hClose hOutput
                   ]
 
+type OptList = Data.Sequence.Seq ((LLIR.Builder -> LLIR.Builder), Bool)
+
+newList :: OptList
+newList = Data.Sequence.fromList [(OPT.cse, False), (OPT.dce, False), (OPT.cfold, False)]
+
+addOpt :: OptList -> String -> OptList
+addOpt l "cse" = Data.Sequence.update 0 (OPT.cse, True) l
+addOpt l "dce" = Data.Sequence.update 1 (OPT.dce, True) l
+addOpt l "cp"  = Data.Sequence.update 2 (OPT.cfold, True) l
+
+getOpts :: OptList -> [(LLIR.Builder -> LLIR.Builder)]
+getOpts l = map fst $ toList $ Data.Sequence.filter (\(f, used) -> used) l
+
+getOptFunction :: Configuration -> (LLIR.Builder -> LLIR.Builder)
+getOptFunction configuration =
+  let fs = zip [OPT.cse, OPT.dce, OPT.cfold] $ repeat False in
+    case Configuration.opt configuration of
+      Configuration.All -> OPT.optimize
+      Configuration.Some names -> foldl (\f opt -> opt . f) 
+                                        (OPT.gmem2reg . OPT.mem2reg) 
+                                        (getOpts $ foldl (\l name -> case name of
+                                                            Configuration.Enable s -> addOpt l s)
+                                                          newList names)
+
 codeGen :: Configuration -> String -> Either String [IO ()]
 codeGen configuration input = do
   let (errors, tokens) = partitionEithers $ Scanner.scan input
+      optimizer = getOptFunction configuration
   -- If errors occurred, bail out.
   mapM_ (mungeErrorMessage configuration . Left) errors
   -- Otherwise, attempt a parse.
@@ -173,7 +202,7 @@ codeGen configuration input = do
     Left  a -> Left a
     Right ast -> do
       let ( mod, ( SemanticChecker.Context ios asts0 ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other)
-          asts = if length ios /=0 then asts0 else OPT.optimize asts0
+          asts = if length ios /=0 then asts0 else optimizer asts0
         in if length ios /= 0
          then Right $ (LLIR.debugs asts) ++ ios
          else let asm = CodeGen.gen (LLIR.pmod asts)
