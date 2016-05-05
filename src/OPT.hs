@@ -47,6 +47,10 @@ cAssert builder =
         pm2 = pm{functions=fxs2}
         in builder{pmod=pm2}
 
+getReachable :: VFunction -> String -> Set.Set String -> Set.Set String
+getReachable func str s1 = 
+  if str `Set.member` s1 then s1 else foldl (\acc x -> getReachable func x acc) (s1 `Set.union` (Set.singleton str) ) ( blockSuccessors $ (HashMap.!) (blocks func) str )
+
 cAssert_function :: VFunction -> VFunction
 cAssert_function func =
     let blockDoms = invertMap $ blockDominators func
@@ -61,13 +65,14 @@ cAssert_function func =
                           case cond of
                             InstRef a ->
                               let inst = hml (functionInstructions accf) a "cassert2"
-                                  trueDomBlocks = hml blockDoms tblockN "cassert3"
-                                  falseDomBlocks = hml blockDoms fblockN "cassert4"
+                                  trueDomBlocks = getReachable func tblockN Set.empty
+                                  falseDomBlocks = getReachable func fblockN Set.empty
                                   tDomBlocks :: [String] = Set.toList $ Set.difference trueDomBlocks falseDomBlocks
                                   fDomBlocks :: [String] = Set.toList $ Set.difference falseDomBlocks trueDomBlocks
                                   r1 :: VFunction = replaceBlockUses accf inst tDomBlocks (ConstBool True)
                                   r2 :: VFunction = replaceBlockUses r1 inst fDomBlocks (ConstBool False)
-                                  in --error $ printf "tdom:%s\ninst:%s\nF:%s\nblockUses:%s\n" (show tDomBlocks) (show inst) (show accf) (show $ getBlockUses inst func tDomBlocks )
+                                  errS :: String = printf "tdom:%s\nfdom:%s\ninst:%s\nF:%s\nafter:%s\n" (show tDomBlocks) (show fDomBlocks) (show inst) (show accf) (show r2)
+                                  in --error errS
                                      r2
                             _ -> accf
                         _ -> accf) func (blockOrder func)
@@ -76,9 +81,9 @@ cfold :: Builder -> Builder
 cfold builder =
   let pm = pmod builder
       fxs :: HashMap.Map String VFunction = functions pm
-      fxs2 = HashMap.map (cfold_function (globals pm) ) fxs
-      pm2 = pm{functions=fxs2}
-      in builder{pmod=pm2}
+      (cmbs) = HashMap.map (cfold_function (globals pm) ) fxs
+      pm2 = pm{functions=HashMap.map fst cmbs}
+      in builder{pmod=pm2,debugs=( (debugs builder) ++ (concat $ map snd $ HashMap.elems cmbs) ) }
 
 isConstInt :: ValueRef -> Bool
 isConstInt (ConstInt a) = True
@@ -219,7 +224,7 @@ cfold_inst inst@(VBinOp name op op1 op2) func =
 
 cfold_inst _ func = (func, False)
 
-cfold_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> VFunction
+cfold_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> (VFunction, [IO()])
 cfold_function globals func =
   let insts = functionInstructions func
       foldf = \(func, changed) inst ->
@@ -245,9 +250,10 @@ cfold_function globals func =
               a -> error $ printf "Invalid thing to take len of %s\n:inst:%s\nfunc:%s" (show a) (show inst) (show func)
           _ -> cfold_inst inst func
       (nfunc, changed) = foldl foldf (func, False) insts
+      dbgs :: [IO()] = [printf "func:%s\n" (show nfunc)]
       in if changed then
-         cfold_function globals nfunc
-         else func
+         let (f2,d1) = cfold_function globals nfunc in (f2, dbgs ++ d1)
+         else (func,dbgs)
 
 isPure :: VInstruction -> Bool
 isPure (VUnOp _ _ _ ) = True
