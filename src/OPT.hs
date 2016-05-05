@@ -111,28 +111,32 @@ cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func =
         f2 :: VFunction = updateInstructionF (VUncondBranch name dest) f1
         in (f2, True)
 
+-- TODO if block has only itself as predecessor
 cfold_inst inst@(VUncondBranch name succ) func =
+-- if (name /= "%13") && (name /= "%6") then error $ printf "inst:%s\nPRE:%s\nPOST:%s" (show inst) (show func) (succ ++ "|" ++ (getName $ getParentBlock inst func) ) else 
     let post = hml (blocks func) succ $ printf "cfold rpred\n %s\n" (show func)
         in if 1 /= (length $ blockPredecessors post) then (func, False)
         else let
           block :: VBlock = getParentBlock inst func
           bname = getName block
-          pi = blockInstructions block
-          block2 :: VBlock = block{blockSuccessors=(blockSuccessors post), blockInstructions=(take ((length pi)-1) pi) ++ (blockInstructions post)}
-          f0 :: VFunction = updateBlockF block2 func
-          f1 :: VFunction = deleteInstruction (hml (functionInstructions f0) (last pi) "upd") f0
-          f2 :: VFunction = foldl (\f bn->
-             let b = hml (blocks f) bn "cfold bfix"
-                 b2 = b{blockPredecessors=(delete succ (blockPredecessors b)) ++ [bname]}
-                 phis = getPHIs f bn
-                 f2 = f{blocks=HashMap.insert bn b2 (blocks f)}
-                 nf = foldl (\f (VPHINode nam hm) ->
-                    let hm2 = HashMap.insert bname (hml hm succ "mergebb") hm
-                        hm3 = HashMap.delete succ hm2
-                        in updateInstructionF (VPHINode nam hm3 ) f ) f2 phis
-                 in nf ) f1 (blockSuccessors post)
-          f3 = deleteBlockNI post f2
-          in (f3, True)
+          in if succ == bname then (deleteBlock block func, True) else
+          let pi = blockInstructions block
+              block2 :: VBlock = block{blockSuccessors=(blockSuccessors post), blockInstructions=(take ((length pi)-1) pi) ++ (blockInstructions post)}
+              f0 :: VFunction = updateBlockF block2 func
+              f1 :: VFunction = deleteInstruction (hml (functionInstructions f0) (last pi) "upd") f0
+              f2 :: VFunction = foldl (\f bn->
+                 let b = hml (blocks f) bn "cfold bfix"
+                     b2 = b{blockPredecessors=(delete succ (blockPredecessors b)) ++ [bname]}
+                     phis = getPHIs f bn
+                     f2 = f{blocks=HashMap.insert bn b2 (blocks f)}
+                     nf = foldl (\f (VPHINode nam hm) ->
+                        let hm2 = HashMap.insert bname (hml hm succ "mergebb") hm
+                            hm3 = HashMap.delete succ hm2
+                            in updateInstructionF (VPHINode nam hm3 ) f ) f2 phis
+                     in nf ) f1 (blockSuccessors post)
+              f3 = deleteBlockNI post f2
+              in --if (name /= "%13") && (name /= "%6") then error $ printf "inst:%s\nPRE:%s\nPOST:%s" (show inst) (show func) (show f3) else 
+                 (f3, True)
 
 
 cfold_inst phi@(VPHINode n mp) func =
@@ -504,6 +508,7 @@ mem2reg_function pm func =
                     --val <- getPreviousStoreValue prevStore
                     let replU = replaceAllUses acc2 loadf val
                     let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [])--[printf "PHIS:%s\n%s\nprev ID:%s\nfinID:%s\n" (show phis) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
+                    let strs :: [String] = [printf "PHIS:%s\n%s\nprev ID:%s\nfinID:%s\n" (show phis) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ]
                     return $ (res,bmap2, phis2, accPm2)
                 of
                     Left dbg2 -> (phis, bmap, accPm, acc,False, dbg ++ dbg2)

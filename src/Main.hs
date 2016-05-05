@@ -173,20 +173,21 @@ newList :: OptList
 newList = Data.Sequence.fromList [(OPT.cse, False), (OPT.dce, False), (OPT.cfold, False)]
 
 addOpt :: OptList -> String -> OptList
-addOpt l "cse" = Data.Sequence.update 0 (OPT.cAssert . OPT.cse, True) l
-addOpt l "dce" = Data.Sequence.update 1 (OPT.dce, True) l
-addOpt l "cp"  = Data.Sequence.update 2 (OPT.cfold, True) l
+addOpt l "mem2reg" = Data.Sequence.update 0 (OPT.gmem2reg . OPT.mem2reg, True) l
+addOpt l "cse" = Data.Sequence.update 1 (OPT.cAssert . OPT.cse . OPT.gmem2reg . OPT.mem2reg, True) l
+addOpt l "dce" = Data.Sequence.update 2 (OPT.dce, True) l
+addOpt l "cp"  = Data.Sequence.update 3 (OPT.cfold, True) l
 
 getOpts :: OptList -> [(LLIR.Builder -> LLIR.Builder)]
 getOpts l = map fst $ toList $ Data.Sequence.filter (\(f, used) -> used) l
 
 getOptFunction :: Configuration -> (LLIR.Builder -> LLIR.Builder)
 getOptFunction configuration =
-  let fs = zip [OPT.cse, OPT.dce, OPT.cfold] $ repeat False in
+  let fs = zip [OPT.gmem2reg . OPT.mem2reg, OPT.cse, OPT.dce, OPT.cfold] $ repeat False in
     case Configuration.opt configuration of
       Configuration.All -> OPT.optimize
       Configuration.Some names -> foldl (\f opt -> opt . f) 
-                                        (OPT.gmem2reg . OPT.mem2reg) 
+                                        (\x -> x) 
                                         (getOpts $ foldl (\l name -> case name of
                                                             Configuration.Enable s -> addOpt l s)
                                                           newList names)

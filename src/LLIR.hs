@@ -483,7 +483,7 @@ deleteBlockNI :: VBlock -> VFunction -> VFunction
 deleteBlockNI block func =
   let name = getName block
       blcks = HashMap.delete name $ blocks func
-      succs = (map ((HashMap.!) (blocks func)) $ blockSuccessors block)
+      succs = (map ((HashMap.!) (blocks func)) $ filter (\x -> x /= name) $ blockSuccessors block)
       f1 = func{blocks=blcks, blockOrder=delete name (blockOrder func)}
       rf :: VFunction -> VBlock -> VFunction = \f b -> removePredecessor b name f
       f2 = foldl rf f1 succs
@@ -494,7 +494,7 @@ deleteBlock block func =
   let name = getName block
       insts :: HashMap.Map String VInstruction = HashMap.filterWithKey (\k v -> not $ elem k (blockInstructions block) ) (functionInstructions func)
       blcks = HashMap.delete name $ blocks func
-      succs = (map ((HashMap.!) (blocks func)) $ blockSuccessors block)
+      succs = (map ((HashMap.!) (blocks func)) $ filter (\x -> x /= name) $ blockSuccessors block)
       f1 = func{blocks=blcks, functionInstructions=insts, blockOrder=delete name (blockOrder func)}
       rf :: VFunction -> VBlock -> VFunction = \f b -> removePredecessor b name f
       f2 = foldl rf f1 succs
@@ -507,7 +507,7 @@ removePredecessor block pred func =
       f0 = updateBlockF block2 func
       blockName = getName block2
       phis :: [VInstruction] = getPHIs func blockName
-      in if (length npred) == 0 then
+      in if ( blockName == pred ) || ( (length npred) == 0 ) then
           deleteBlock block2 f0
         else if (length npred) == 1 then
         -- nuke phis
