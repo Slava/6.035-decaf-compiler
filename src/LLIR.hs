@@ -65,7 +65,7 @@ class Locationable a where
 
 class Value a where
   getType :: Builder -> a -> VType
-  valueEq :: Builder -> a -> a -> Bool
+  valueEq :: VFunction -> a -> a -> Bool
 
 instance Value String where
   getType _ a = TString
@@ -122,8 +122,8 @@ instance Value ValueRef where
 
   valueEq builder (InstRef str1) (InstRef str2) =
     case do
-      inst1 <- getInstruction builder str1
-      inst2 <- getInstruction builder str2
+      inst1 <- HashMap.lookup str1 (functionInstructions builder) 
+      inst2 <- HashMap.lookup str2 (functionInstructions builder) 
       return $ valueEq builder inst1 inst2
     of
       Just a -> a
@@ -251,7 +251,9 @@ instance Value VInstruction where
   valueEq b (VUnOp _ op1 arg1) (VUnOp _ op2 arg2) = ( valueEq b op1 op2 ) && ( valueEq b arg1 arg2 )
   valueEq b (VBinOp _ op1 a1 b1) (VBinOp _ op2 a2 b2) = ( valueEq b op1 op2 ) && ( valueEq b a1 a2 ) && ( valueEq b b1 b2 )
   valueEq b (VArrayLen _ op1 ) (VArrayLen _ op2) = ( valueEq b op1 op2 )
-  valueEq b (VPHINode a1 _ ) (VPHINode a2 _) = ( valueEq b a1 a2 )
+  valueEq b (VPHINode _ a1 ) (VPHINode _ a2) = ((HashMap.keys a1) == (HashMap.keys a2) ) && all (\x -> valueEq b ( (HashMap.!) a1 x ) ( (HashMap.!) a2 x ) ) (HashMap.keys a1)
+  valueEq b (VArrayLen _ a1 ) (VArrayLen _ a2) = valueEq b a1 a2
+
   valueEq b _ _ = False
 
 safeBangBang :: [a] -> Int -> Maybe a

@@ -314,13 +314,25 @@ replaceResInstr ainstr binstr func =
 
 cse_function :: VFunction -> VFunction
 cse_function func =
-  let func2 = HashMap.foldl (\accFunc block -> cse_block accFunc block) func (blocks func) in
-  HashMap.foldr (\block func ->
-                  foldl (\func instrName ->
-                          case (HashMap.lookup instrName (functionInstructions func)) of
-                            Just instr -> if (isPure instr) then (tryCse block func instr) else func
-                            Nothing -> func)
-                    func (blockInstructions block)) func2 (blocks func2)
+  let blockNames = blockOrder func
+      domTree = blockDominators func
+      (changed, f2) = foldl (\(changed,f) bn ->
+        if changed then (changed,f) else
+        let doms = Set.toList $ Set.delete bn $ (HashMap.!) domTree bn
+            vb = (HashMap.!) (blocks f) bn
+            getInst = \x -> (HashMap.!) (functionInstructions f) x
+            bins = map getInst (blockInstructions vb)
+            (changed,f2) = foldl (\(changed,f) b2 ->
+                let bins2 = map (\x -> (HashMap.!) (functionInstructions f) x) (blockInstructions vb)
+                    (c2, f2) = foldl (\(changed,f) inst1 -> if changed then (changed, f) else
+                        foldl (\(changed,f) inst2 -> if changed then (changed,f) else if not $ valueEq f inst1 inst2 then (changed,f) else (True, replaceAndRemove (InstRef $ getName inst2) f inst1 ) ) (False, f) bins
+                      ) (False, f) bins2
+                    in (c2, f2)
+              ) (False,f) doms 
+            --insts2 = map () bins
+            in (False, f)
+        ) (False,func) blockNames
+      in if changed then cse_function f2 else f2
 
 replaceIfEqual :: ValueRef -> ValueRef -> ValueRef -> ValueRef
 replaceIfEqual a b c =
