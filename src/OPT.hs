@@ -67,12 +67,12 @@ cAssert_function func =
                               let inst = hml (functionInstructions accf) a "cassert2"
                                   trueDomBlocks = getReachable func tblockN Set.empty
                                   falseDomBlocks = getReachable func fblockN Set.empty
-                                  tDomBlocks :: [String] = Set.toList $ Set.difference trueDomBlocks falseDomBlocks
-                                  fDomBlocks :: [String] = Set.toList $ Set.difference falseDomBlocks trueDomBlocks
+                                  tDomBlocks :: [String] = Set.toList $ Set.difference trueDomBlocks (falseDomBlocks `Set.union` (Set.singleton blockName))
+                                  fDomBlocks :: [String] = Set.toList $ Set.difference falseDomBlocks (trueDomBlocks `Set.union` (Set.singleton blockName))
                                   r1 :: VFunction = replaceBlockUses accf inst tDomBlocks (ConstBool True)
                                   r2 :: VFunction = replaceBlockUses r1 inst fDomBlocks (ConstBool False)
                                   errS :: String = printf "tdom:%s\nfdom:%s\ninst:%s\nF:%s\nafter:%s\n" (show tDomBlocks) (show fDomBlocks) (show inst) (show accf) (show r2)
-                                  in --error errS
+                                  in --if (getName inst) == "%21" then error errS else
                                      r2
                             _ -> accf
                         _ -> accf) func (blockOrder func)
