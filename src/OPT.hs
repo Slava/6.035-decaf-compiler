@@ -35,9 +35,9 @@ cse :: Builder -> Builder
 cse builder =
   let pm = pmod builder
       fxs :: HashMap.Map String VFunction = functions pm
-      fxs2 = HashMap.map cse_function fxs
-      pm2 = pm{functions=fxs2}
-      in builder{pmod=pm2}
+      (cmbs) = HashMap.map cse_function fxs
+      pm2 = pm{functions=HashMap.map fst cmbs}
+      in builder{pmod=pm2,debugs=( (debugs builder) ++ (concat $ map snd $ HashMap.elems cmbs) ) }
 
 cAssert :: Builder -> Builder
 cAssert builder =
@@ -228,7 +228,7 @@ cfold_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> (VFuncti
 cfold_function globals func =
   let insts = functionInstructions func
       foldf = \(func, changed) inst ->
-        if changed then (func, True) else
+        if changed /= Nothing then (func, changed) else
         case inst of
           VArrayLen _ al ->
             case al of
@@ -236,7 +236,7 @@ cfold_function globals func =
                 let rval = ConstInt$ toInteger $ forceInt $ snd $ hml globals nam "globalref"
                     f1 = replaceAllUses func inst rval
                     f2 = deleteInstruction inst f1
-                    in (f2,True)
+                    in (f2, Just inst)
               InstRef nam ->
                 let str :: String = printf "instref f:%s" (show func)
                     rinst :: VInstruction = hml (functionInstructions func) nam $ str
@@ -246,12 +246,12 @@ cfold_function globals func =
                     rval = ConstInt$ toInteger $ len
                     f1 = replaceAllUses func inst rval
                     f2 = deleteInstruction inst f1
-                    in (f2,True)
+                    in (f2,Just inst)
               a -> error $ printf "Invalid thing to take len of %s\n:inst:%s\nfunc:%s" (show a) (show inst) (show func)
-          _ -> cfold_inst inst func
-      (nfunc, changed) = foldl foldf (func, False) insts
-      dbgs :: [IO()] = [printf "func:%s\n" (show nfunc)]
-      in if changed then
+          _ -> let (f2, cd) = cfold_inst inst func in (f2, if cd then Just inst else Nothing )
+      (nfunc, changed) = foldl foldf (func, Nothing) insts
+      dbgs :: [IO()] = [] -- [printf "inst:%s\nBEFORE:%s\nAFTER:%s\n" (show changed) (show func) (show nfunc)]
+      in if changed /= Nothing then
          let (f2,d1) = cfold_function globals nfunc in (f2, dbgs ++ d1)
          else (func,dbgs)
 
@@ -282,43 +282,46 @@ dce builder =
 selemIndex :: Eq a => a -> [a] -> Int
 selemIndex a b = case elemIndex a b of Just a -> a
 
-cse_function :: VFunction -> VFunction
+cse_function :: VFunction -> (VFunction, [IO()])
 cse_function func =
   let blockNames = blockOrder func
       domTree = blockDominators func
-      (changed, f2) = foldl (\(changed,f) bn ->
-        if changed then (changed,f) else
+      (changed, f2) = foldl (\(changed0,f) bn ->
+        if changed0 /= Nothing then (changed0,f) else
         let doms = Set.toList $ Set.delete bn $ hml domTree bn "csef"
             vb = hml (blocks f) bn "cse2"
             getInst = \x -> hml (functionInstructions f) x "cse3"
             bins = map getInst (blockInstructions vb)
-            (changed,f2) = --if bn /= "entry" then error $ printf "%s:%s\n" bn (show doms) else 
-                           foldl (\(changed,f) b2 ->
-                let vb2 = hml (blocks f) b2 "cse4"
-                    bins2 = map (\x -> hml (functionInstructions f) x "cse5" ) (blockInstructions vb2)
-                    (c2, f2) = foldl (\(changed,f) inst1 -> if changed then (changed, f) else
-                        foldl (\(changed,f) inst2 -> --if ( (getName inst2) == "%44" ) && ( (getName inst1) == "%32" ) then error $ printf "bn:%s\ndoms:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show doms) (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f) else 
-                           if changed then (changed,f) else if not $ valueEq f inst1 inst2 then (changed,f) else 
-                             (True, replaceAndRemove (InstRef $ getName inst1) f inst2 ) 
-                           ) (False, f) bins
-                      ) (False, f) bins2
-                    in (c2, f2)
-              ) (False,f) doms
-            in if changed then (changed,f2) else
+            (changed1,f2) = --if bn /= "entry" then error $ printf "%s:%s\n" bn (show doms) else 
+                            foldl (\(changed2,f) b2 -> if changed2 /= Nothing then (changed2,f) else
+                                                       let vb2 = hml (blocks f) b2 "cse4"
+                                                           bins2 = map (\x -> hml (functionInstructions f) x "cse5" ) (blockInstructions vb2)
+                                                           (c2, f2) = foldl (\(changed3,f) inst1 -> if changed3 /= Nothing then (changed3, f) else
+                                                                                                    foldl (\(changed4,f) inst2 -> --if ( (getName inst2) == "%44" ) && ( (getName inst1) == "%32" ) then error $ printf "bn:%s\ndoms:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show doms) (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f) else 
+                                                                                                                                  if changed4 /= Nothing then (changed4,f) else if not $ valueEq f inst1 inst2 then (changed4,f) else 
+                                                                                                                                    (Just (inst1, inst2), replaceAndRemove (InstRef $ getName inst1) f inst2 ) 
+                                                                                                          ) (Nothing, func) bins
+                                                                            ) (Nothing, func) bins2
+                                                           in (c2, f2)
+                                  ) (Nothing,func) doms
+            in if changed1 /= Nothing then (changed1,f2) else
               let binsts = (blockInstructions vb)
-                  (c2, f3) = foldl (\(changed,f) inst1 -> if changed then (changed, f) else
-                                    foldl (\(changed,f) inst2 -> if changed then (changed,f) else if (
+                  (c2, f3) = foldl (\(changed5,f) inst1 -> if changed5 /= Nothing then (changed5, f) else
+                                    foldl (\(changed6,f) inst2 -> if changed6 /= Nothing then (changed6,f) else if (
                           let repBName = getName inst2
                               repDName = getName inst1
                               in (selemIndex repBName binsts) >= (selemIndex repDName binsts)
-                               ) || (not $ valueEq f inst1 inst2) then (changed,f) else 
-                                 --error $ printf "bn:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f)
-                                 (True, replaceAndRemove (InstRef $ getName inst2) f inst1 ) 
-                         ) (False, f) bins
-                      ) (changed, f2) bins
+                               ) || (not $ valueEq f inst1 inst2) then (changed6,f) else 
+                                 --error $ printf "bn:%s\ninst2:%s\ninst1:%s\neq:%s\nbk:%s\nprev:%s\nF:%s" bn (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show vb) (show func) (show f)
+                                 (Just (inst2,inst1), replaceAndRemove (InstRef $ getName inst2) f inst1 ) 
+                         ) (Nothing, func) bins
+                      ) (Nothing, func) bins
                   in (c2, f3)
-        ) (False,func) blockNames
-      in if changed then cse_function f2 else f2
+        ) (Nothing,func) blockNames
+      dbgs :: [IO()] = [] -- [printf "inst:%s\nBEFORE:%s\nAFTER:%s\n" (show changed) (show func) (show f2)]
+      in if changed /= Nothing then
+         let (f3,d1) = cse_function f2 in (f3, dbgs ++ d1)
+         else (func,dbgs)
 
 dce_function :: VFunction -> VFunction
 dce_function func =
