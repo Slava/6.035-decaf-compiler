@@ -67,7 +67,8 @@ cAssert_function func =
                                   fDomBlocks :: [String] = Set.toList $ Set.difference falseDomBlocks trueDomBlocks
                                   r1 :: VFunction = replaceBlockUses accf inst tDomBlocks (ConstBool True)
                                   r2 :: VFunction = replaceBlockUses r1 inst fDomBlocks (ConstBool False)
-                                  in r2
+                                  in --error $ printf "tdom:%s\ninst:%s\nF:%s\nblockUses:%s\n" (show tDomBlocks) (show inst) (show accf) (show $ getBlockUses inst func tDomBlocks )
+                                     r2
                             _ -> accf
                         _ -> accf) func (blockOrder func)
 
@@ -562,7 +563,7 @@ gmem2reg_function pm func =
          else (npm, dbgs0)
 
 optimize :: Builder -> Builder
-optimize b = cfold $ dce $ cse $ gmem2reg $ mem2reg b
+optimize b = cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int
 unsafeElemIndex item array =

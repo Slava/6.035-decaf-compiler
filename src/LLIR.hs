@@ -411,7 +411,7 @@ getBlockUses inst func blks =
       isValid :: (Use -> Maybe Use) = \mval -> do
           val <- getUseValue func mval
           ninst <- case val of
-            InstRef a -> HashMap.lookup a instM
+            InstRef a -> HashMap.lookup a (functionInstructions func)
             _ -> Nothing
           if inst == ninst then Just mval else Nothing
       in concat $ map (\inst -> mapMaybe isValid (getUsed inst)) $ HashMap.elems instM
