@@ -268,9 +268,78 @@ dce builder =
         pm2 = pm{functions=fxs2}
         in builder{pmod=pm2}
 
+instrReplaceable :: VInstruction -> VInstruction -> Bool
+instrReplaceable a b =
+  (instrNoName a) == (instrNoName b)
+
+instrNoName :: VInstruction -> VInstruction
+instrNoName instr =
+  case instr of
+    VUnOp _ a b -> VUnOp "0" a b
+    VBinOp _ a b c -> VBinOp "0" a b c
+    VLookup _ a -> VLookup "0" a
+    VAllocation _ a b -> VAllocation "0" a b
+    VArrayLookup _ a b -> VArrayLookup "0" a b
+    VArrayLen _ a -> VArrayLen "0" a
+    VCondBranch _ a b c -> VCondBranch "0" a b c
+    _ -> instr
+
+tryCse :: VBlock -> VFunction -> VInstruction -> VFunction
+tryCse block func instr =
+  let blockDoms = invertMap $ blockDominators func
+      otherBlocksSet = (HashMap.!) blockDoms (blockName block)
+      retFunc = Set.fold (\blName func -> let otherBlock = (HashMap.!) (blocks func) blName in
+                                foldl (\func instrName ->
+                                        let otherInstr = (HashMap.!) (functionInstructions func) instrName in
+                                        if (not $ instrReplaceable instr otherInstr) then func
+                                        else (replaceResInstr otherInstr instr func)) func (blockInstructions otherBlock)) func otherBlocksSet
+  in
+    retFunc
+
+resRef :: VInstruction -> ValueRef
+resRef instr =
+  case instr of
+    VUnOp a _ _ -> InstRef a
+    VBinOp a _ _ _ -> InstRef a
+    VLookup a _-> InstRef a
+    VAllocation a _ _ -> InstRef a
+    VArrayLookup a _ _ -> InstRef a
+    VArrayLen a _ -> InstRef a
+    VCondBranch a _ _ _ -> InstRef a
+    _ -> InstRef "wtf"
+
+replaceResInstr :: VInstruction -> VInstruction -> VFunction -> VFunction
+replaceResInstr ainstr binstr func =
+  cse_replaceUse func (resRef ainstr) (resRef binstr)
+
 cse_function :: VFunction -> VFunction
 cse_function func =
-  HashMap.foldl (\accFunc block -> cse_block accFunc block) func (blocks func)
+  let func2 = HashMap.foldl (\accFunc block -> cse_block accFunc block) func (blocks func) in
+  HashMap.foldr (\block func ->
+                  foldl (\func instrName ->
+                          case (HashMap.lookup instrName (functionInstructions func)) of
+                            Just instr -> if (isPure instr) then (tryCse block func instr) else func
+                            Nothing -> func)
+                    func (blockInstructions block)) func2 (blocks func2)
+
+replaceIfEqual :: ValueRef -> ValueRef -> ValueRef -> ValueRef
+replaceIfEqual a b c =
+  if a == b then c else a
+
+cse_replaceUse :: VFunction -> ValueRef -> ValueRef -> VFunction
+cse_replaceUse func aref bref =
+  HashMap.foldrWithKey (\instrName instr func ->
+          let ninstr = case instr of
+                VUnOp a b c -> VUnOp a b (replaceIfEqual c aref bref)
+                VBinOp a b c d -> VBinOp a b (replaceIfEqual c aref bref) (replaceIfEqual d aref bref)
+                VArrayLen a b -> VArrayLen a (replaceIfEqual b aref bref)
+                VArrayLookup a b c -> VArrayLookup a b (replaceIfEqual c aref bref)
+                VMethodCall a b c args -> VMethodCall a b c (map (\x -> replaceIfEqual x aref bref) args)
+                VPHINode a hashmap -> VPHINode a (HashMap.map (\x -> replaceIfEqual x aref bref) hashmap)
+                _ -> instr
+          in
+            func{functionInstructions=HashMap.insert instrName ninstr (functionInstructions func)}
+          ) func (functionInstructions func)
 
 dce_function :: VFunction -> VFunction
 dce_function func =
