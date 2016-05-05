@@ -52,17 +52,17 @@ cAssert_function func =
     let blockDoms = invertMap $ blockDominators func
     in foldl
             (\accf blockName ->
-                let block :: VBlock = (HashMap.!) (blocks func) blockName
+                let block :: VBlock = hml (blocks func) blockName "cassert1"
                     blockInstrs :: [String] = blockInstructions block
                     lastInstrN :: String = last blockInstrs
-                    lastInstr :: VInstruction = (HashMap.!) (functionInstructions accf) lastInstrN
+                    lastInstr :: VInstruction = hml (functionInstructions accf) lastInstrN "cassert5"
                     in case lastInstr of
                         (VCondBranch name cond tblockN fblockN) ->
                           case cond of
                             InstRef a ->
-                              let inst = (HashMap.!) (functionInstructions accf) a
-                                  trueDomBlocks = (HashMap.!) blockDoms tblockN
-                                  falseDomBlocks = (HashMap.!) blockDoms fblockN
+                              let inst = hml (functionInstructions accf) a "cassert2"
+                                  trueDomBlocks = hml blockDoms tblockN "cassert3"
+                                  falseDomBlocks = hml blockDoms fblockN "cassert4"
                                   tDomBlocks :: [String] = Set.toList $ Set.difference trueDomBlocks falseDomBlocks
                                   fDomBlocks :: [String] = Set.toList $ Set.difference falseDomBlocks trueDomBlocks
                                   r1 :: VFunction = replaceBlockUses accf inst tDomBlocks (ConstBool True)
@@ -273,50 +273,6 @@ dce builder =
         pm2 = pm{functions=fxs2}
         in builder{pmod=pm2}
 
-instrReplaceable :: VInstruction -> VInstruction -> Bool
-instrReplaceable a b =
-  (instrNoName a) == (instrNoName b)
-
-instrNoName :: VInstruction -> VInstruction
-instrNoName instr =
-  case instr of
-    VUnOp _ a b -> VUnOp "0" a b
-    VBinOp _ a b c -> VBinOp "0" a b c
-    VLookup _ a -> VLookup "0" a
-    VAllocation _ a b -> VAllocation "0" a b
-    VArrayLookup _ a b -> VArrayLookup "0" a b
-    VArrayLen _ a -> VArrayLen "0" a
-    VCondBranch _ a b c -> VCondBranch "0" a b c
-    _ -> instr
-
-tryCse :: VBlock -> VFunction -> VInstruction -> VFunction
-tryCse block func instr =
-  let blockDoms = invertMap $ blockDominators func
-      otherBlocksSet = (HashMap.!) blockDoms (blockName block)
-      retFunc = Set.fold (\blName func -> let otherBlock = (HashMap.!) (blocks func) blName in
-                                foldl (\func instrName ->
-                                        let otherInstr = (HashMap.!) (functionInstructions func) instrName in
-                                        if (not $ instrReplaceable instr otherInstr) then func
-                                        else (replaceResInstr otherInstr instr func)) func (blockInstructions otherBlock)) func otherBlocksSet
-  in
-    retFunc
-
-resRef :: VInstruction -> ValueRef
-resRef instr =
-  case instr of
-    VUnOp a _ _ -> InstRef a
-    VBinOp a _ _ _ -> InstRef a
-    VLookup a _-> InstRef a
-    VAllocation a _ _ -> InstRef a
-    VArrayLookup a _ _ -> InstRef a
-    VArrayLen a _ -> InstRef a
-    VCondBranch a _ _ _ -> InstRef a
-    _ -> InstRef "wtf"
-
-replaceResInstr :: VInstruction -> VInstruction -> VFunction -> VFunction
-replaceResInstr ainstr binstr func =
-  cse_replaceUse func (resRef ainstr) (resRef binstr)
-
 selemIndex :: Eq a => a -> [a] -> Int
 selemIndex a b = case elemIndex a b of Just a -> a
 
@@ -326,14 +282,14 @@ cse_function func =
       domTree = blockDominators func
       (changed, f2) = foldl (\(changed,f) bn ->
         if changed then (changed,f) else
-        let doms = Set.toList $ Set.delete bn $ (HashMap.!) domTree bn
-            vb = (HashMap.!) (blocks f) bn
-            getInst = \x -> (HashMap.!) (functionInstructions f) x
+        let doms = Set.toList $ Set.delete bn $ hml domTree bn "csef"
+            vb = hml (blocks f) bn "cse2"
+            getInst = \x -> hml (functionInstructions f) x "cse3"
             bins = map getInst (blockInstructions vb)
             (changed,f2) = --if bn /= "entry" then error $ printf "%s:%s\n" bn (show doms) else 
                            foldl (\(changed,f) b2 ->
-                let vb2 = (HashMap.!) (blocks f) b2
-                    bins2 = map (\x -> (HashMap.!) (functionInstructions f) x) (blockInstructions vb2)
+                let vb2 = hml (blocks f) b2 "cse4"
+                    bins2 = map (\x -> hml (functionInstructions f) x "cse5" ) (blockInstructions vb2)
                     (c2, f2) = foldl (\(changed,f) inst1 -> if changed then (changed, f) else
                         foldl (\(changed,f) inst2 -> --if ( (getName inst2) == "%44" ) && ( (getName inst1) == "%32" ) then error $ printf "bn:%s\ndoms:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show doms) (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f) else 
                            if changed then (changed,f) else if not $ valueEq f inst1 inst2 then (changed,f) else 
@@ -358,106 +314,12 @@ cse_function func =
         ) (False,func) blockNames
       in if changed then cse_function f2 else f2
 
-replaceIfEqual :: ValueRef -> ValueRef -> ValueRef -> ValueRef
-replaceIfEqual a b c =
-  if a == b then c else a
-
-cse_replaceUse :: VFunction -> ValueRef -> ValueRef -> VFunction
-cse_replaceUse func aref bref =
-  HashMap.foldrWithKey (\instrName instr func ->
-          let ninstr = case instr of
-                VUnOp a b c -> VUnOp a b (replaceIfEqual c aref bref)
-                VBinOp a b c d -> VBinOp a b (replaceIfEqual c aref bref) (replaceIfEqual d aref bref)
-                VArrayLen a b -> VArrayLen a (replaceIfEqual b aref bref)
-                VArrayLookup a b c -> VArrayLookup a b (replaceIfEqual c aref bref)
-                VMethodCall a b c args -> VMethodCall a b c (map (\x -> replaceIfEqual x aref bref) args)
-                VPHINode a hashmap -> VPHINode a (HashMap.map (\x -> replaceIfEqual x aref bref) hashmap)
-                _ -> instr
-          in
-            func{functionInstructions=HashMap.insert instrName ninstr (functionInstructions func)}
-          ) func (functionInstructions func)
-
 dce_function :: VFunction -> VFunction
 dce_function func =
     foldl (\accFunc instr ->
         if (length $ getUses instr accFunc) == 0 && (isPure instr)
             then deleteInstruction instr accFunc
             else accFunc) func (HashMap.elems $ functionInstructions func)
-
-cse_block :: VFunction -> VBlock -> VFunction
-cse_block func block =
-  let initState ::
-        (HashMap.Map ValueRef String,
-         HashMap.Map String String,
-         HashMap.Map String String,
-         Int,
-         VFunction) = (HashMap.empty, HashMap.empty, HashMap.empty, 0, func)
-      genVar2Val = \var2val nextVal ref ->
-        let valMaybe = HashMap.lookup ref var2val in
-        case valMaybe of
-          Just x -> (var2val, nextVal, x)
-          Nothing -> let newVal = "t" ++ (show nextVal) in
-            (HashMap.insert ref newVal var2val, nextVal + 1, newVal)
-      lookupVal = \val2reg val ref ->
-        let regMaybe = HashMap.lookup val val2reg in
-        case regMaybe of
-          Just regStr -> InstRef regStr
-          Nothing -> ref
-      foldf = (\(var2val :: HashMap.Map ValueRef String, expr2reg :: HashMap.Map String String, val2reg :: HashMap.Map String String, nextVal :: Int, func :: VFunction) instrName ->
-        let result = do
-              instr <- HashMap.lookup instrName (functionInstructions func)
-              let (var2val2, nextVal2, exprStr, reg, updatedInstr, pure) = case instr of
-                    VUnOp reg op arg ->
-                      let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
-                      (var2val_, nextVal_, show (op, val), reg, VUnOp reg op (lookupVal val2reg val arg), True)
-                    VBinOp reg op arg1_ arg2_ ->
-                      let (arg1, arg2) = if (op == "+" || op == "*") && arg1_ > arg2_ then (arg2_, arg1_) else (arg1_, arg2_) in
-                      let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
-                      let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
-                      (var2val__, nextVal__, show (op, val1, val2), reg, VBinOp reg op (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2), True)
-                    VArrayLookup reg arg1 arg2 ->
-                      let (var2val_, nextVal_, val1) = genVar2Val var2val nextVal arg1 in
-                      let (var2val__, nextVal__, val2) = genVar2Val var2val_ nextVal_ arg2 in
-                      (var2val__, nextVal__, show ("[]", val1, val2), reg, VArrayLookup reg (lookupVal val2reg val1 arg1) (lookupVal val2reg val2 arg2), True)
-                    VArrayLen reg arg ->
-                      let (var2val_, nextVal_, val) = genVar2Val var2val nextVal arg in
-                      (var2val_, nextVal_, show ("@", val), reg, VArrayLen reg (lookupVal val2reg val arg), True)
-                    VMethodCall reg isCallout fn args ->
-                      let nargs = map (\arg -> let (_, _, val) = (genVar2Val var2val nextVal arg) in lookupVal val2reg val arg) args in
-                      (var2val, nextVal, "n/a", reg, VMethodCall reg isCallout fn nargs, False)
-                    VReturn reg mref ->
-                      case mref of
-                        Just ref ->
-                          let (_, _, val) = (genVar2Val var2val nextVal ref) in
-                          (var2val, nextVal, "n/a", reg, VReturn reg (Just (lookupVal val2reg val ref)), False)
-                        Nothing -> (var2val, nextVal, "n/a", reg, VReturn reg mref, False)
-                    x -> (var2val, nextVal, "n/a", instrName, x, False)
-              let existReg = HashMap.lookup exprStr expr2reg
-              let (retVar2val, retExpr2reg, retVal2reg, retNextVal) = case existReg of
-                    Just someReg -> let someValMaybe = HashMap.lookup (InstRef someReg) var2val2
-                                        someVal = case someValMaybe of
-                                          Just val -> val
-                                          Nothing -> "shouldNeverHappenVal"
-                                    in
-                                      (HashMap.insert (InstRef reg) someVal var2val2,
-                                       expr2reg, val2reg, nextVal2)
-                    Nothing -> let newVal = ("t" ++ (show nextVal2))
-                               in
-                                 (HashMap.insert (InstRef reg) newVal var2val2,
-                                  HashMap.insert exprStr reg expr2reg,
-                                  HashMap.insert newVal reg val2reg,
-                                  nextVal2 + 1)
-              let updatedFunc = func{functionInstructions=(HashMap.insert instrName updatedInstr (functionInstructions func))}
-              return $ if pure then (retVar2val, retExpr2reg, retVal2reg, retNextVal, updatedFunc) else (var2val, expr2reg, val2reg, nextVal, updatedFunc)
-
-            unwrapped = case result of
-              Just unwrpd -> unwrpd
-              Nothing -> (var2val, expr2reg, val2reg, nextVal, func)
-        in
-          unwrapped)
-      (var2val, expr2reg, val2reg, nextVal, nFunc) = foldl foldf initState (blockInstructions block)
-  in
-    nFunc
 
 partitionStoreLoadOther :: VFunction -> [Use] -> ([Use], [Use], [Use])
 partitionStoreLoadOther func uses =
@@ -540,8 +402,8 @@ gmem2reg_function pm func =
             allInst = HashMap.elems $ functionInstructions func
             isUse :: (VInstruction -> Bool) = \inst -> not ( isPureWRT inst gv pm )
             (_, loadsm0, _) = partitionStoreLoadOther func uses0
-            eblkI = blockInstructions ( (HashMap.!) (blocks func) "entry" )
-            (eblkL,_) = foldl (\(acc,f) inst -> if f then (acc,f) else case (HashMap.!) (functionInstructions func) inst of (VLookup _ _) -> (acc++[inst],f); _ -> (acc,True) ) ([], False) eblkI
+            eblkI = blockInstructions ( hml (blocks func) "entry" "gm2r" )
+            (eblkL,_) = foldl (\(acc,f) inst -> if f then (acc,f) else case hml (functionInstructions func) inst "gm2r2" of (VLookup _ _) -> (acc++[inst],f); _ -> (acc,True) ) ([], False) eblkI
             loads0 = filter (\x -> not $ elem (useInstruction x) eblkL ) loadsm0
             lastValueInBlocks :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
             phis :: HashMap.Map String (Maybe ValueRef) = HashMap.empty

@@ -251,7 +251,7 @@ instance Value VInstruction where
   valueEq b (VUnOp _ op1 arg1) (VUnOp _ op2 arg2) = ( op1 == op2 ) && ( arg1 == arg2 )
   valueEq b (VBinOp _ op1 a1 b1) (VBinOp _ op2 a2 b2) = ( op1 == op2 ) && ( a1 == a2 ) && ( b1 == b2 )
   valueEq b (VArrayLen _ op1 ) (VArrayLen _ op2) = ( op1 == op2 )
-  valueEq b (VPHINode _ a1 ) (VPHINode _ a2) = ((HashMap.keys a1) == (HashMap.keys a2) ) && all (\x -> ( (HashMap.!) a1 x ) == ( (HashMap.!) a2 x ) ) (HashMap.keys a1)
+  valueEq b (VPHINode _ a1 ) (VPHINode _ a2) = ((HashMap.keys a1) == (HashMap.keys a2) ) && all (\x -> ( hml a1 x "veq1" ) == ( hml a2 x "veq2" ) ) (HashMap.keys a1)
   valueEq b (VArrayLen _ a1 ) (VArrayLen _ a2) = a1 == a2
 
   valueEq b _ _ = False
@@ -407,7 +407,7 @@ getUsesValRef vref func =
 -- get all uses that this instruction is used by (ie all things this function is depended on)
 getBlockUses :: VInstruction -> VFunction -> [String] -> [Use]
 getBlockUses inst func blks =
-  let instM = HashMap.intersection (functionInstructions func) (HashMap.fromList $ zip (concat $ map ( blockInstructions . ( (HashMap.!) (blocks func) ) ) blks ) [0..] )
+  let instM = HashMap.intersection (functionInstructions func) (HashMap.fromList $ zip (concat $ map ( blockInstructions . ( \x -> hml (blocks func) x "getBU" ) ) blks ) [0..] )
       isValid :: (Use -> Maybe Use) = \mval -> do
           val <- getUseValue func mval
           ninst <- case val of
@@ -419,7 +419,7 @@ getBlockUses inst func blks =
 -- get all uses that this instruction is used by (ie all things this function is depended on)
 getBlockUsesValRef :: ValueRef -> VFunction -> [String] -> [Use]
 getBlockUsesValRef vref func blks=
-  let instM = HashMap.intersection (functionInstructions func) (HashMap.fromList $ zip (concat $ map ( blockInstructions . ( (HashMap.!) (blocks func) ) ) blks ) [0..] )
+  let instM = HashMap.intersection (functionInstructions func) (HashMap.fromList $ zip (concat $ map ( blockInstructions . ( \x -> hml (blocks func) x "getBUVR" ) ) blks ) [0..] )
       isValid :: (Use -> Maybe Use) = \mval -> do
           val <- getUseValue func mval
           if val == vref then Just mval else Nothing
@@ -483,7 +483,7 @@ deleteBlockNI :: VBlock -> VFunction -> VFunction
 deleteBlockNI block func =
   let name = getName block
       blcks = HashMap.delete name $ blocks func
-      succs = (map ((HashMap.!) (blocks func)) $ filter (\x -> x /= name) $ blockSuccessors block)
+      succs = (map (\x -> hml (blocks func) x "delNI" ) $ filter (\x -> (x /= name) && HashMap.member x (blocks func) ) $ blockSuccessors block)
       f1 = func{blocks=blcks, blockOrder=delete name (blockOrder func)}
       rf :: VFunction -> VBlock -> VFunction = \f b -> removePredecessor b name f
       f2 = foldl rf f1 succs
@@ -494,7 +494,7 @@ deleteBlock block func =
   let name = getName block
       insts :: HashMap.Map String VInstruction = HashMap.filterWithKey (\k v -> not $ elem k (blockInstructions block) ) (functionInstructions func)
       blcks = HashMap.delete name $ blocks func
-      succs = (map ((HashMap.!) (blocks func)) $ filter (\x -> x /= name) $ blockSuccessors block)
+      succs :: [VBlock] = (map (\x -> hml (blocks func) x "delB" ) $ filter (\x -> (x /= name) && HashMap.member x (blocks func) ) $ blockSuccessors block)
       f1 = func{blocks=blcks, functionInstructions=insts, blockOrder=delete name (blockOrder func)}
       rf :: VFunction -> VBlock -> VFunction = \f b -> removePredecessor b name f
       f2 = foldl rf f1 succs
@@ -1065,7 +1065,7 @@ isPureWRT (VCondBranch _ _ _ _) s pm = True
 isPureWRT (VUncondBranch _ _) s pm = True
 isPureWRT (VMethodCall _ {-isCallout-} True fname args) s pm = all (\x -> x /= (GlobalRef s) ) args
 isPureWRT (VMethodCall _ {-isCallout-} False fname args) s pm = ( all (\x -> x /= (GlobalRef s) ) args ) && 
-  let fun = (HashMap.!) (functions pm) fname
+  let fun = hml (functions pm) fname "pureWRT"
       insts = HashMap.elems $ (functionInstructions fun)
       in all (\x -> case x of
                       (VMethodCall _ _ fname2 args2) -> if fname2==fname then True else isPureWRT x s pm
