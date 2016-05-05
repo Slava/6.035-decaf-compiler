@@ -173,7 +173,7 @@ newList :: OptList
 newList = Data.Sequence.fromList [(OPT.cse, False), (OPT.dce, False), (OPT.cfold, False)]
 
 addOpt :: OptList -> String -> OptList
-addOpt l "cse" = Data.Sequence.update 0 (OPT.cse, True) l
+addOpt l "cse" = Data.Sequence.update 0 (OPT.cAssert . OPT.cse, True) l
 addOpt l "dce" = Data.Sequence.update 1 (OPT.dce, True) l
 addOpt l "cp"  = Data.Sequence.update 2 (OPT.cfold, True) l
 
