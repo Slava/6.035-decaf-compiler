@@ -362,25 +362,23 @@ mem2reg_function pm func =
         let uses0 :: [Use] = getUses alloca func
             isUse :: (VInstruction -> Bool) = \inst -> any (\x -> (getName inst) == (useInstruction x) ) uses0
             (_, loads0, _) = partitionStoreLoadOther func uses0
-            lastValueInBlocks :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
-            phis :: HashMap.Map String (Maybe ValueRef) = HashMap.empty
-            (_, _, pm2, newFunc,changed0, dbg2) = foldl (\(phis, bmap, accPm, acc,changed, dbg) loadu -> case do
+            (_, _, pm2, newFunc,changed0, dbg2) = foldl (\(phis0, bmap0, accPm, acc,changed, dbg) loadu -> case do
                     loadf <- maybeToError2 (getUseInstr acc loadu) $ [] -- [printf "load failed :(\n"]
-                    (phis2, bmap2, accPm2, valM) <- getPreviousStoresInPreds2 isUse phis bmap accPm acc ( InstRef $ getName alloca ) loadf
-                    acc2 <- maybeToError2 (HashMap.lookup (getName acc) (functions accPm2)) []
-                    val <- maybeToError2 valM []
+                    (phis2, bmap2, accPm2, valM) <- getPreviousStoresInPreds2 isUse phis0 bmap0 accPm acc ( InstRef $ getName alloca ) loadf
+                    let acc2 = (HashMap.!) (functions accPm2) (getName acc)
+                    val <- maybeToError2 valM [] -- [printf "couldn't find previous value for %s\n" (show loadf),printf "BM:%s BM2:%s\nPHIS:%s PHI2:%s\n%s\nprev ID:%s\nfinID:%s\n" (show bmap0) (show bmap2) (show phis0) (show phis2) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "PRE-FUNC:\n %s\n" (show accPm) ]
                     --val <- getPreviousStoreValue prevStore
                     let replU = replaceAllUses acc2 loadf val
-                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [])--[printf "PHIS:%s\n%s\nprev ID:%s\nfinID:%s\n" (show phis) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
-                    return $ (res,bmap2, phis2, accPm2)
+                    let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, []) -- [printf "BM:%s BM2:%s\nPHIS:%s PHI2:%s\n%s\nprev ID:%s\nfinID:%s\n" (show bmap0) (show bmap2) (show phis0) (show phis2) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
+                    Right $ (res,bmap2, phis2, accPm2)
                 of
-                    Left dbg2 -> (phis, bmap, accPm, acc,False, dbg ++ dbg2)
+                    Left dbg2 -> (phis0, bmap0, accPm, acc,changed, dbg ++ dbg2)
                     Right ((a,dbg2),bmap2, phis2, accPm2) -> (phis2, bmap2, accPm2{functions=(HashMap.insert (getName a) a (functions accPm2))}, a,True, dbg ++ dbg2 )
-                ) (phis, lastValueInBlocks, pm, func,False, []) loads0
+                ) (HashMap.empty, HashMap.empty, pm, func,False, []) loads0
             --(newFunc, changed0) = (func, False)
             uses :: [Use] = getUses alloca newFunc
             (stores, loads, others) = partitionStoreLoadOther newFunc uses
-            dbg3 = dbg ++ dbg2 -- ++ [printf "Uses %s | loads=%s\n" (show uses0) (show loads0)]
+            dbg3 = dbg ++ dbg2 -- ++ [printf "var:%s | Uses %s | loads=%s\n" (show alloca) (show uses0) (show loads0)]
         in
           if (length uses) == (length stores) then
              let nfunc2 = deleteAllUses newFunc alloca
@@ -417,7 +415,7 @@ gmem2reg_function pm func =
                     let res :: (VFunction, [IO()])= (deleteInstruction loadf replU, [])--[printf "PHIS:%s\n%s\nprev ID:%s\nfinID:%s\n" (show phis) (show loadf) (show $ lastId accPm) (show $ lastId accPm2), printf "previous store %s\n" (show valM), printf "FUNC:\n %s\n" (show $ deleteInstruction loadf replU) ])
                     return $ (res,bmap2, phis2, accPm2)
                 of
-                    Left dbg2 -> (phis, bmap, accPm, acc,False, dbg ++ dbg2)
+                    Left dbg2 -> (phis, bmap, accPm, acc,changed, dbg ++ dbg2)
                     Right ((a,dbg2),bmap2, phis2, accPm2) -> (phis2, bmap2, accPm2{functions=(HashMap.insert (getName a) a (functions accPm2))}, a,True, dbg ++ dbg2 )
                 ) (phis, lastValueInBlocks, pm, func,False, []) loads0
             --(newFunc, changed0) = (func, False)
@@ -464,7 +462,7 @@ getPreviousStoreInBlock2 :: ( VInstruction -> Bool ) -> VFunction -> ValueRef ->
 getPreviousStoreInBlock2 isUse func alloca instr =
     do
         let prevInstrs :: [VInstruction] = getInstructionsBefore func instr
-        lastOther <- foldl (\acc inst -> if isUse inst then Right inst else acc ) (Left []) prevInstrs
+        lastOther <- foldl (\acc inst -> if (isUse inst) && case inst of VLookup _ _ -> False; _ -> True then Right inst else acc ) (Left []) prevInstrs
         let val = case lastOther of VStore _ a b -> if b == alloca then Just a else Nothing; _ -> Nothing
         return $ val
 
