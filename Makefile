@@ -24,11 +24,11 @@ FILE=./tests/tests/optimizer/input/noise_median.dcf
 FILE=./tests/tests/optimizer/input/segovia_blur.dcf
 FILE=./tests/tests/dataflow/input/cse-17.dcf
 FILE=./tests/tests/dataflow/input/cse-16.dcf
-FILE=./tst.dcf
+FILE=./tst2.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t inter $(FILE)
-	./run.sh -t opt $(FILE)
+	./run.sh -t opt --opt=all $(FILE)
 #	./run.sh -t assembly $(FILE) | tee out.s
 #	gcc -o a.out out.s
 #	./a.out

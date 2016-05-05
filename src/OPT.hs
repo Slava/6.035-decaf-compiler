@@ -239,7 +239,6 @@ cfold_function globals func =
           _ -> cfold_inst inst func
       (nfunc, changed) = foldl foldf (func, False) insts
       in if changed then
-         --error (show func)
          cfold_function globals nfunc
          else func
 
@@ -461,7 +460,6 @@ gmem2reg_function pm func =
          else (npm, dbgs0)
 
 optimize :: Builder -> Builder
---optimize b = dce $ cse $ mem2reg b
 optimize b = cfold $ dce $ cse $ gmem2reg $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int
