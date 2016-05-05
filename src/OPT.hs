@@ -52,22 +52,24 @@ cAssert_function func =
     let blockDoms = invertMap $ blockDominators func
     in foldl
             (\accf blockName ->
-                let block = (HashMap.!) (blocks func) blockName
-                    blockInstrs = blockInstructions block
-                    lastInstrN = last blockInstrs
-                    lastInstr = (HashMap.!) (functionInstructions accf) lastInstr
-                    case lastInstr of
+                let block :: VBlock = (HashMap.!) (blocks func) blockName
+                    blockInstrs :: [String] = blockInstructions block
+                    lastInstrN :: String = last blockInstrs
+                    lastInstr :: VInstruction = (HashMap.!) (functionInstructions accf) lastInstrN
+                    in case lastInstr of
                         (VCondBranch name cond tblockN fblockN) ->
-                            let trueDomBlocks = (HashMap.!) blockDoms tblockN
-                                falseDomBlocks = (HashMap.!) blockDoms fblockN
-                                tDomBlocks = Set.difference trueDomBlocks falseDomBlocks
-                                fDomBlocks = Set.difference falseDomBlocks trueDomBlocks
-                                in replaceBlocksUses cond (replaceBlocksUses cond accf tDomBlocks (ConstBool True)) fDomBlocks (ConstBool False)
+                          case cond of
+                            InstRef a ->
+                              let inst = (HashMap.!) (functionInstructions accf) a
+                                  trueDomBlocks = (HashMap.!) blockDoms tblockN
+                                  falseDomBlocks = (HashMap.!) blockDoms fblockN
+                                  tDomBlocks :: [String] = Set.toList $ Set.difference trueDomBlocks falseDomBlocks
+                                  fDomBlocks :: [String] = Set.toList $ Set.difference falseDomBlocks trueDomBlocks
+                                  r1 :: VFunction = replaceBlockUses accf inst tDomBlocks (ConstBool True)
+                                  r2 :: VFunction = replaceBlockUses r1 inst fDomBlocks (ConstBool False)
+                                  in r2
+                            _ -> accf
                         _ -> accf) func (blockOrder func)
-
-replaceBlocksUses :: VFunction -> ValueRef -> [String] -> ValueRef -> VFunction
-replaceBlocksUses func cond blockNames bool =
-
 
 cfold :: Builder -> Builder
 cfold builder =

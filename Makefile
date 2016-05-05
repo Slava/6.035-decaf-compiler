@@ -3,7 +3,7 @@ all:
 
 test:	all
 	./tests/tests/codegen/test.sh
-		./tests/tests/codegen-hidden/test.sh
+	./tests/tests/codegen-hidden/test.sh
 
 #FILE=./tests/tests/codegen/input/02-expr.dcf
 #FILE=./tests/tests/codegen-hidden/input/hidden-17-divide.dcf

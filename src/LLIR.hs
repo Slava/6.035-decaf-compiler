@@ -347,6 +347,11 @@ replaceAllUses func instr val =
     let uses = getUses instr func
         in foldl (\acc use -> replaceUse acc use val) func uses
 
+replaceBlockUses :: VFunction -> VInstruction -> [String] -> ValueRef -> VFunction
+replaceBlockUses func instr blocks val =
+    let uses = getBlockUses instr func blocks
+        in foldl (\acc use -> replaceUse acc use val) func uses
+
 deleteAllUses :: VFunction -> VInstruction -> VFunction
 deleteAllUses sfunc instr =
     let uses = getUses instr sfunc
