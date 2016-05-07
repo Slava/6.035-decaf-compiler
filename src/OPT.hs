@@ -69,6 +69,95 @@ cAssert_function func =
                             _ -> accf
                         _ -> accf) func (blockOrder func)
 
+
+isTPure :: VInstruction -> Bool
+isTPure (VUnOp _ _ _ ) = True
+isTPure (VBinOp _ _ _ _ ) = True
+isTPure (VStore _ _ _) = False
+isTPure (VLookup _ _) = True
+isTPure (VAllocation _ _ _) = True
+isTPure (VArrayStore _ _ _ _) = False
+isTPure (VArrayLookup _ _ _) = True
+isTPure (VArrayLen _ _) = True
+isTPure (VMethodCall _ _ _ _) = False
+isTPure (VReturn _ _) = True
+isTPure (VCondBranch _ _ _ _) = True
+isTPure (VUncondBranch _ _) = True
+isTPure (VUnreachable _ ) = True
+isTPure (VPHINode _ _) = True
+
+parallelize :: Builder -> Builder
+parallelize builder =
+  let pm = pmod builder
+      fxs :: HashMap.Map String VFunction = functions pm
+      (cmbs) = HashMap.map (parallelize_function (globals pm) ) fxs
+      pm2 = pm{functions=HashMap.map fst cmbs}
+      in builder{pmod=pm2,debugs=( (debugs builder) ++ (concat $ map snd $ HashMap.elems cmbs) ) }
+
+
+data LoopInfo = LoopInfo {-loops-}[LoopInfo] {-not loops-}[String]
+
+getLoop domTree headerN blockNames = 
+  let inLoop :: [String] = filter (\x -> ( Set.member (x) ((HashMap.!) domTree headerN )) && ( Set.member headerN ((HashMap.!) domTree x )) ) blockNames
+      in inLoop
+
+data Loop = Loop {
+  header :: String,
+  subLoops :: [Loop],
+  loopBlocks :: [String]
+} deriving (Eq, Show);
+
+getLoops :: VFunction -> [String] -> [Loop]
+getLoops func blockNames = 
+  let domTree :: HashMap.Map String (Set.Set String) = reachable blockNames func
+      loopHeaders ::[String] = filter (\b -> 
+        let bpu :: [String] = ( blockPredecessors $ (HashMap.!) (blocks func) b )
+            bp :: [String] = filter (\x -> elem x blockNames) bpu
+            in (length bp > 0)
+               && ( Set.member b ((HashMap.!) domTree b ) )
+               && not ( all (\x -> if HashMap.member x domTree then Set.member b ((HashMap.!) domTree x ) else False ) bpu )
+        ) blockNames
+      loops :: [(String,[String])] = map (\b -> (b, getLoop domTree b blockNames)) loopHeaders
+      loopR :: [Loop] = map (\(head,bks) -> Loop head (getLoops func $ delete head bks) bks) loops
+      in --if blockNames /= ( blockOrder func) then error $ printf "bks:%s\n DT:%s\n" (show blockNames) (show domTree) else 
+         loopR
+
+parallelize_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> (VFunction, [IO()])
+parallelize_function globals func =
+  let loops = getLoops func (blockOrder func)
+{-      insts = functionInstructions funcrea
+      foldf = \(func, changed) inst ->
+        if changed /= Nothing then (func, changed) else
+        case inst of
+          VArrayLen _ al ->
+            case al of
+              GlobalRef nam ->
+                let rval = ConstInt$ toInteger $ forceInt $ snd $ hml globals nam "globalref"
+                    f1 = replaceAllUses func inst rval
+                    f2 = deleteInstruction inst f1
+                    in (f2, Just inst)
+              InstRef nam ->
+                let str :: String = printf "instref f:%s" (show func)
+                    rinst :: VInstruction = hml (functionInstructions func) nam $ str
+                    len :: Int = case rinst of
+                      VAllocation _ _ (Just n) -> n
+                      a -> error $ printf "bad allocation len :%s" $ show a
+                    rval = ConstInt$ toInteger $ len
+                    f1 = replaceAllUses func inst rval
+                    f2 = deleteInstruction inst f1
+                    in (f2,Just inst)
+              a -> error $ printf "Invalid thing to take len of %s\n:inst:%s\nfunc:%s" (show a) (show inst) (show func)
+          _ -> let (f2, cd) = cfold_inst inst func in (f2, if cd then Just inst else Nothing )
+      (nfunc, changed) = foldl foldf (func, Nothing) insts
+-}
+      changed :: Maybe Bool = Nothing
+      nfunc = func
+      dbgs :: [IO()] = [printf "%s\n" $ show $ loops]
+      in if changed /= Nothing then
+         let (f2,d1) = parallelize_function globals nfunc in (f2, dbgs ++ d1)
+         else (func,dbgs)
+
+
 cfold :: Builder -> Builder
 cfold builder =
   let pm = pmod builder
@@ -456,7 +545,7 @@ gmem2reg_function pm func =
          else (npm, dbgs0)
 
 optimize :: Builder -> Builder
-optimize b = cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
+optimize b = cfold $ parallelize $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int
 unsafeElemIndex item array =
@@ -577,6 +666,30 @@ getPreviousStoresInPreds2 isUse phis bmap pm func alloca instr =
                                                           nf = updateInstructionF (VPHINode (getName phi) mapper ) f
                                                           fpm :: PModule = npm{functions=(HashMap.insert (getName nf) nf (functions npm))}
                                                           in Right (phisF, bmapF, fpm, Just $ InstRef $ getName phi)
+
+
+reachableCompute :: (Set.Set String) -> HashMap.Map String (Set.Set String) -> VFunction -> HashMap.Map String (Set.Set String)
+reachableCompute valid state func =
+  let newState :: HashMap.Map String (Set.Set String) = Set.foldl
+       (\accState bn ->
+         let block = (HashMap.!) (blocks func) bn
+             updatedDomSet =
+                 foldl (\domSet predName ->
+                          let predDom = hml accState predName "reachC"
+                              in domSet `Set.union` predDom) (hml accState bn "rechU") (filter (\x -> HashMap.member x accState) $ blockPredecessors block)
+             in HashMap.insert bn (updatedDomSet `Set.intersection` valid) accState
+       )
+       state valid
+  in
+    if state /= newState
+    then reachableCompute valid newState func
+    else state
+
+reachable:: [String] -> VFunction -> HashMap.Map String (Set.Set String)
+reachable validL func =
+  let valid = Set.fromList validL
+      initState :: HashMap.Map String (Set.Set String) = HashMap.fromList $ map (\k -> (k,(Set.fromList $ blockPredecessors (hml (blocks func) k "reach")) `Set.intersection` valid )) validL
+  in reachableCompute valid initState func
 
 blockDominatorsCompute :: HashMap.Map String (Set.Set String) -> VFunction -> HashMap.Map String (Set.Set String)
 blockDominatorsCompute state func =
