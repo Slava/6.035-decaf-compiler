@@ -199,7 +199,7 @@ genFunction cx f =
                   nzInst
       (ncx2, blocksStr) = foldl
                    (\(cx, s) name ->
-                     let block = (HashMap.!) (LLIR.blocks f) name
+                     let block = hml (LLIR.blocks f) name "getFunc-Block"
                          (ncx, str) = genBlock cx{blockName=name} block name f in
                      (ncx, s ++ str))
                    (ncx1, "") $ LLIR.blockOrder f
@@ -276,13 +276,13 @@ genBlock cx block name f =
       	cors = concat $ map (\(VPHINode pname hm) ->
             let var = locStr $ getVar cx pname
                 str :: String = CodeGen.blockName cx
-                val = getRef cx ((HashMap.!) hm str )
+                val = getRef cx (hml hm str "genBlock")
                 in move val var
           ) phis
         (x1,x2,mvs) = makeOneReg r1 r2 "%rax"
         (y1,y2,op) = if isImmediateS x1 then (x2, x1, swapBinop op0) else (x1, x2, op0)
         mp = HashMap.fromList [("==","je"),("!=","jne"),("u<","jb"),("u<=","jbe"),("u>","ja"),("u>","jae"),("<","jl"),("<=","jle"),(">","jg"),(">=","jge")]
-        insts = ["# " ++ (show cmpI), "# "++ (show termI), printf "cmpq %s, %s" y2 y1, printf "%s %s_%s" ((HashMap.!) mp op) (CodeGen.name cx) tB, printf "jmp %s_%s" (CodeGen.name cx) fB]
+        insts = ["# " ++ (show cmpI), "# "++ (show termI), printf "cmpq %s, %s" y2 y1, printf "%s %s_%s" (hml mp op "reverse cmp") (CodeGen.name cx) tB, printf "jmp %s_%s" (CodeGen.name cx) fB]
         in arrayToLine $ cors ++ mvs ++ insts
       in (ncx, blockName ++ ":\n" ++ setupGlobals ++ s ++ fastEnd)
 
@@ -377,8 +377,9 @@ genInstruction cx (VBinOp result op val1 val2) =
           (
             if ((op == "/") || (op == "%")) then
               -- in A/B require A in rax, rdx empty
-              let (instA, out) :: ([String], String) = genOpB op loc1 loc2 in
-                (arrayToLine instA) ++ (arrayToLine $ move out vloc)
+              let (nreg, inst0) = if isImmediateS loc2 then makeReg loc2 "%rbx" else (loc2,[])
+                  (instA, out) :: ([String], String) = genOpB op loc1 nreg in
+                  (arrayToLine ( inst0 ++ instA ++ (move out vloc) ) )
             else
               (arrayToLine $ move loc1 oploc)
               ++ ( arrayToLine $ genOp op loc2 oploc ) ++ ( arrayToLine cp )
@@ -464,7 +465,7 @@ genInstruction cx (VCondBranch result cond true false) =
       phis = (LLIR.getPHIs (function cx) true) ++ (LLIR.getPHIs (function cx) false)
       cors = concat $ map (\(VPHINode pname hm) ->
             let var = locStr $ getVar cx pname
-                val = getRef cx ((HashMap.!) hm (blockName cx) )
+                val = getRef cx (hml hm (blockName cx) "condBr" )
                 in move val var
           ) phis
       (reg, inst1) :: (String, [String]) = makeReg loc "%rax"
@@ -478,7 +479,7 @@ genInstruction cx (VUncondBranch result dest) =
   let phis = LLIR.getPHIs (function cx) dest
       cors :: [String] = concat $ map (\(VPHINode pname hm) ->
           let var = locStr $ getVar cx pname
-              val = getRef cx ((HashMap.!) hm (blockName cx) )
+              val = getRef cx (hml hm (blockName cx) "uncondBr")
               in move val var
         ) phis
       in (cx, arrayToLine $ cors ++ [printf "jmp %s_%s" (name cx) dest ])

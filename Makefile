@@ -24,11 +24,14 @@ FILE=./tests/tests/optimizer/input/noise_median.dcf
 FILE=./tests/tests/optimizer/input/segovia_blur.dcf
 FILE=./tests/tests/dataflow/input/cse-17.dcf
 FILE=./tests/tests/dataflow/input/cse-16.dcf
+FILE=/home/wmoses/git/disfunctionalprogramming/tests/tests/optimizer/input/segovia_philbin.dcf
+FILE=./tests/tests/codegen-hidden/input/hidden-17-divide.dcf
+FILE=/home/wmoses/git/disfunctionalprogramming/tests/tests/optimizer/input/segovia_blur.dcf
 FILE=./tst.dcf
 rtest:	all
 	cat $(FILE)
 	./run.sh -t inter $(FILE)
 	./run.sh -t opt --opt=all $(FILE)
-#	./run.sh -t assembly $(FILE) | tee out.s
-#	gcc -o a.out out.s
-#	./a.out
+	./run.sh -t assembly $(FILE) --opt=all | tee out.s
+	gcc -o a.out out.s
+	./a.out

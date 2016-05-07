@@ -1,9 +1,8 @@
 #!/bin/sh
 
 runcompiler_opt() {
-  $(git rev-parse --show-toplevel)/run.sh --target=assembly -o $2 $1
 #  $(git rev-parse --show-toplevel)/run.sh --target=assembly -o $2 $1
-#  $(git rev-parse --show-toplevel)/run.sh --opt=all --target=assembly -o $2 $1
+  $(git rev-parse --show-toplevel)/run.sh --opt=all --target=assembly -o $2 $1
 }
 
 runcompiler_unopt() {

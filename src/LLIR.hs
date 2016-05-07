@@ -517,9 +517,8 @@ removePredecessor block pred func =
               in --if blockName /= "ifFalse" then error $ printf "phis:%s\n prev:%s\n f1:%s\n" (show phis) (show func) (show f1) else 
                  f1
         else
-          let f1 = foldl (\f (VPHINode n mp ) ->
-                   let phi = VPHINode n mp
-                       vals = HashMap.elems mp
+          let f1 = foldl (\f phi@(VPHINode n mp ) ->
+                   let vals = HashMap.elems mp
                        nphi :: [ValueRef] = filter (\x -> x /= (InstRef $ n) ) vals
                        in if all (== head nphi) (tail nphi) then
                             replaceAndRemove (head nphi) f phi
@@ -553,8 +552,8 @@ getInstructionParent func instr =
             _ -> ""
 
 blockToString :: (HashMap.Map String VInstruction) -> VBlock -> String
-blockToString hm (VBlock _ name instr pd _) =
-  " " ++ name ++ ":\t\t\t\t\t" ++ (show pd) ++ "\n" ++ (foldl (\acc x -> acc ++ "    " ++ (
+blockToString hm (VBlock _ name instr pd sc) =
+  " " ++ name ++ ":\t\t\t\t\t" ++ (show pd) ++ "|" ++ (show sc) ++ "\n" ++ (foldl (\acc x -> acc ++ "    " ++ (
         case HashMap.lookup x hm of
           Just a -> x ++ " = " ++ (show a) ++ "\n"
           Nothing -> "INVALID_INST("++name++")\n"

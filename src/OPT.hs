@@ -102,7 +102,7 @@ cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func =
     let block :: VBlock = getParentBlock inst func
         dest :: String = if b then tb else fb
         ndest :: String = if b then fb else tb
-        block2 :: VBlock = block{blockSuccessors=[ndest]}
+        block2 :: VBlock = block{blockSuccessors=[dest]}
         f0 :: VFunction = updateBlockF block2 func
         f1 :: VFunction = removePredecessor (hml (blocks f0) ndest "cfold rpred") (getName block) f0
         f2 :: VFunction = updateInstructionF (VUncondBranch name dest) f1
@@ -132,7 +132,7 @@ cfold_inst inst@(VUncondBranch name succ) func =
                             in updateInstructionF (VPHINode nam hm3 ) f ) f2 phis
                      in nf ) f1 (blockSuccessors post)
               f3 = deleteBlockNI post f2
-              in --if (name /= "%13") && (name /= "%6") then error $ printf "inst:%s\nPRE:%s\nPOST:%s" (show inst) (show func) (show f3) else 
+              in --if (name == "%7") then error $ printf "bs:%s\ninst:%s\nPRE:%s\nPOST:%s" (show $ blockSuccessors post) (show inst) (show func) (show f3) else 
                  (f3, True)
 
 

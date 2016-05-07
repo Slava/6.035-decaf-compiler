@@ -203,7 +203,7 @@ codeGen configuration input = do
     Left  a -> Left a
     Right ast -> do
       let ( mod, ( SemanticChecker.Context ios asts0 ) ) = SemanticChecker.semanticVerifyProgram ast (SemanticChecker.Module Nothing (Data.Map.empty) SemanticChecker.Other)
-          asts = if length ios /=0 then asts0 else optimizer asts0
+          asts = OPT.cfold $ if length ios /=0 then asts0 else optimizer asts0
         in if length ios /= 0
          then Right $ (LLIR.debugs asts) ++ ios
          else let asm = CodeGen.gen (LLIR.pmod asts)
