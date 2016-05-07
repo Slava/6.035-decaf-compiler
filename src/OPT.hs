@@ -263,6 +263,23 @@ isPure (VMethodCall _ _ _ _) = False
 isPure (VUnreachable _ ) = False
 isPure (VPHINode _ _) = True
 
+
+isPure2 :: VInstruction -> Bool
+isPure2 (VUnOp _ _ _ ) = True
+isPure2 (VBinOp _ _ _ _ ) = True
+isPure2 (VStore _ _ _) = False
+isPure2 (VLookup _ _) = False
+isPure2 (VAllocation _ _ _) = True
+isPure2 (VArrayStore _ _ _ _) = False
+isPure2 (VArrayLookup _ _ _) = False
+isPure2 (VArrayLen _ _) = True
+isPure2 (VReturn _ _) = False
+isPure2 (VCondBranch _ _ _ _) = False
+isPure2 (VUncondBranch _ _) = False
+isPure2 (VMethodCall _ _ _ _) = False
+isPure2 (VUnreachable _ ) = False
+isPure2 (VPHINode _ _) = True
+
 dce :: Builder -> Builder
 dce builder =
     let pm = pmod builder
@@ -291,7 +308,7 @@ cse_function domTree func =
         let doms = Set.toList $ Set.delete bn $ hml domTree bn "csef"
             vb = hml (blocks f) bn "cse2"
             getInst = \x -> hml (functionInstructions f) x "cse3"
-            bins = map getInst (blockInstructions vb)
+            bins = filter isPure2 $ map getInst (blockInstructions vb)
             (changed1,f2) = --if bn /= "entry" then error $ printf "%s:%s\n" bn (show doms) else 
                             foldl (\(changed2,f) b2 -> if changed2 /= Nothing then (changed2,f) else
                                                        let vb2 = hml (blocks f) b2 "cse4"
@@ -475,6 +492,14 @@ getPreviousStoreInBlock2 isUse func alloca instr =
         let val = case lastOther of VStore _ a b -> if b == alloca then Just a else Nothing; b -> Nothing
         return $ val
 
+getPreviousValInBlock2 :: ( VInstruction -> Bool ) -> VFunction -> ValueRef -> VInstruction -> Either [IO()] (Maybe ValueRef)
+getPreviousValInBlock2 isUse func alloca instr =
+    do
+        let prevInstrs :: [VInstruction] = getInstructionsBefore func instr
+        lastOther <- foldl (\acc inst -> case inst of VLookup _ a -> if a == alloca then Right inst else acc; _ -> if isUse inst then Right inst else acc ) (Left []) prevInstrs
+        let val = case lastOther of VStore _ a b -> if b == alloca then Just a else Nothing; VLookup n a -> if a == alloca then Just $ InstRef n else Nothing; b -> Nothing
+        return $ val
+
 getPreviousStoresInPreds2 :: ( VInstruction -> Bool ) -> HashMap.Map String (Maybe ValueRef) -> HashMap.Map String (Maybe ValueRef) -> PModule -> VFunction -> ValueRef -> VInstruction -> Either [IO()] (HashMap.Map String (Maybe ValueRef), HashMap.Map String (Maybe ValueRef), PModule, Maybe ValueRef)
 getPreviousStoresInPreds2 isUse phis bmap pm func alloca instr =
     let prevStoreInBlock = getPreviousStoreInBlock2 isUse func alloca instr
@@ -489,13 +514,15 @@ getPreviousStoresInPreds2 isUse phis bmap pm func alloca instr =
                         block :: VBlock <- maybeToError2 (HashMap.lookup blockName funcBlocks) []
                         let preds :: [String] = blockPredecessors block
                         case length preds of
-                          0 -> let (instrName, npm0) = createID pm
-                                   phi :: VInstruction = VLookup instrName alloca
-                                   block2 :: VBlock = block{blockInstructions=([(getName phi)] ++ (blockInstructions block))}
-                                   func2 :: VFunction = func{blocks=(HashMap.insert blockName block2 (blocks func)), functionInstructions=(HashMap.insert (getName phi) phi (functionInstructions func))}
-                                   npm :: PModule = npm0{functions=(HashMap.insert (getName func2) func2 (functions npm0))}
-                                   phis2 = HashMap.insert blockName (Just $ InstRef $ getName phi) phis
-                                   in Right $ (phis2, bmap, npm, Just $ InstRef $ getName phi)
+                          0 -> case getPreviousValInBlock2 isUse func alloca instr of
+                                 Right a -> Right (phis, bmap, pm, a)
+                                 _ -> let (instrName, npm0) = createID pm
+                                          phi :: VInstruction = VLookup instrName alloca
+                                          block2 :: VBlock = block{blockInstructions=([(getName phi)] ++ (blockInstructions block))}
+                                          func2 :: VFunction = func{blocks=(HashMap.insert blockName block2 (blocks func)), functionInstructions=(HashMap.insert (getName phi) phi (functionInstructions func))}
+                                          npm :: PModule = npm0{functions=(HashMap.insert (getName func2) func2 (functions npm0))}
+                                          phis2 = HashMap.insert blockName (Just $ InstRef $ getName phi) phis
+                                          in Right $ (phis2, bmap, npm, Just $ InstRef $ getName phi)
                           _ -> case HashMap.lookup blockName phis of
                                  Just a -> Right (phis,bmap,pm,a)
                                  Nothing ->
