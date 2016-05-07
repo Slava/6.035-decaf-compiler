@@ -86,11 +86,11 @@ isTPure (VUncondBranch _ _) = True
 isTPure (VUnreachable _ ) = True
 isTPure (VPHINode _ _) = True
 
-parallelize :: Builder -> Builder
-parallelize builder =
+loopOpts :: Builder -> Builder
+loopOpts builder =
   let pm = pmod builder
       fxs :: HashMap.Map String VFunction = functions pm
-      (cmbs) = HashMap.map (parallelize_function (globals pm) ) fxs
+      (cmbs) = HashMap.map (loops_function (globals pm) ) fxs
       pm2 = pm{functions=HashMap.map fst cmbs}
       in builder{pmod=pm2,debugs=( (debugs builder) ++ (concat $ map snd $ HashMap.elems cmbs) ) }
 
@@ -122,39 +122,19 @@ getLoops func blockNames =
       in --if blockNames /= ( blockOrder func) then error $ printf "bks:%s\n DT:%s\n" (show blockNames) (show domTree) else 
          loopR
 
-parallelize_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> (VFunction, [IO()])
-parallelize_function globals func =
+
+runAllLoops :: VFunction -> Loop -> (Bool, VFunction, [IO()] )
+runAllLoops func loop =
+  let subs@(changed, nfunc, dbg) = foldl (\(c,f,dbg) lp -> if c then (c,f,dbg) else runAllLoops func lp ) (False, func,[]) (subLoops loop)
+      in if changed then subs else
+        (False, func, dbg ++ [printf "in func %s saw loop with head :%s\n" (getName func) (header loop)] )
+
+loops_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> (VFunction, [IO()])
+loops_function globals func =
   let loops = getLoops func (blockOrder func)
-{-      insts = functionInstructions funcrea
-      foldf = \(func, changed) inst ->
-        if changed /= Nothing then (func, changed) else
-        case inst of
-          VArrayLen _ al ->
-            case al of
-              GlobalRef nam ->
-                let rval = ConstInt$ toInteger $ forceInt $ snd $ hml globals nam "globalref"
-                    f1 = replaceAllUses func inst rval
-                    f2 = deleteInstruction inst f1
-                    in (f2, Just inst)
-              InstRef nam ->
-                let str :: String = printf "instref f:%s" (show func)
-                    rinst :: VInstruction = hml (functionInstructions func) nam $ str
-                    len :: Int = case rinst of
-                      VAllocation _ _ (Just n) -> n
-                      a -> error $ printf "bad allocation len :%s" $ show a
-                    rval = ConstInt$ toInteger $ len
-                    f1 = replaceAllUses func inst rval
-                    f2 = deleteInstruction inst f1
-                    in (f2,Just inst)
-              a -> error $ printf "Invalid thing to take len of %s\n:inst:%s\nfunc:%s" (show a) (show inst) (show func)
-          _ -> let (f2, cd) = cfold_inst inst func in (f2, if cd then Just inst else Nothing )
-      (nfunc, changed) = foldl foldf (func, Nothing) insts
--}
-      changed :: Maybe Bool = Nothing
-      nfunc = func
-      dbgs :: [IO()] = [printf "%s\n" $ show $ loops]
-      in if changed /= Nothing then
-         let (f2,d1) = parallelize_function globals nfunc in (f2, dbgs ++ d1)
+      (changed,nfunc,dbgs) = foldl (\(c,f,dbg) lp-> if c then (c,f,dbg) else runAllLoops func lp ) (False, func,[]) loops
+      in if changed then
+         let (f2,d1) = loops_function globals nfunc in (f2, dbgs ++ d1)
          else (func,dbgs)
 
 
@@ -545,7 +525,7 @@ gmem2reg_function pm func =
          else (npm, dbgs0)
 
 optimize :: Builder -> Builder
-optimize b = cfold $ parallelize $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
+optimize b = cfold $ loopOpts $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int
 unsafeElemIndex item array =
