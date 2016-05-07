@@ -31,14 +31,6 @@ gmem2reg builder =
             in (retPm, dbgs ++ retDbgs)) (pm, []) fxs
       in builder{pmod=pm2,debugs=( (debugs builder) ++ dbg ) }
 
-cse :: Builder -> Builder
-cse builder =
-  let pm = pmod builder
-      fxs :: HashMap.Map String VFunction = functions pm
-      (cmbs) = HashMap.map cse_function fxs
-      pm2 = pm{functions=HashMap.map fst cmbs}
-      in builder{pmod=pm2,debugs=( (debugs builder) ++ (concat $ map snd $ HashMap.elems cmbs) ) }
-
 cAssert :: Builder -> Builder
 cAssert builder =
     let pm = pmod builder
@@ -282,10 +274,18 @@ dce builder =
 selemIndex :: Eq a => a -> [a] -> Int
 selemIndex a b = case elemIndex a b of Just a -> a
 
-cse_function :: VFunction -> (VFunction, [IO()])
-cse_function func =
+
+cse :: Builder -> Builder
+cse builder =
+  let pm = pmod builder
+      fxs :: HashMap.Map String VFunction = functions pm
+      (cmbs) = HashMap.map (\x -> let domTree = blockDominators x in cse_function domTree x ) fxs
+      pm2 = pm{functions=HashMap.map fst cmbs}
+      in builder{pmod=pm2,debugs=( (debugs builder) ++ (concat $ map snd $ HashMap.elems cmbs) ) }
+
+cse_function :: ( HashMap.Map String (Set.Set String) ) -> VFunction -> (VFunction, [IO()])
+cse_function domTree func =
   let blockNames = blockOrder func
-      domTree = blockDominators func
       (changed, f2) = foldl (\(changed0,f) bn ->
         if changed0 /= Nothing then (changed0,f) else
         let doms = Set.toList $ Set.delete bn $ hml domTree bn "csef"
@@ -320,7 +320,7 @@ cse_function func =
         ) (Nothing,func) blockNames
       dbgs :: [IO()] = [] -- [printf "inst:%s\nBEFORE:%s\nAFTER:%s\n" (show changed) (show func) (show f2)]
       in if changed /= Nothing then
-         let (f3,d1) = cse_function f2 in (f3, dbgs ++ d1)
+         let (f3,d1) = cse_function domTree f2 in (f3, dbgs ++ d1)
          else (func,dbgs)
 
 dce_function :: VFunction -> VFunction

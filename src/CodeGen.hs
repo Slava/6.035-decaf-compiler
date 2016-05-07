@@ -456,7 +456,7 @@ genInstruction cx (VArrayLen result ref) =
 genInstruction cx (VReturn _ maybeRef) =
   case maybeRef of
     Just ref -> (cx, "  movq " ++ (snd (genAccess cx ref)) ++ ", %rax\n" ++ "  movq %rbp, %rsp\n  pop %rbp\n  ret\n" )
-    Nothing -> (cx,  "  movq %rbp, %rsp\n  pop %rbp\n  ret\n" )
+    Nothing -> if name cx == "main" then (cx,  "  movq %rbp, %rsp\n  xorq %rax, %rax\n  pop %rbp\n  ret\n" ) else (cx,  "  movq %rbp, %rsp\n  pop %rbp\n  ret\n" )
 
 -- TODO MOVE CMP / etc
 genInstruction cx (VCondBranch result cond true false) =
