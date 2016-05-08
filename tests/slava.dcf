@@ -1,13 +1,9 @@
 callout printf;
 
-int get(int x) {
-    return x;
-}
-
 void main() {
-    int a, b;
-    b = get(2);
-    for (a = 0, b) {
-        printf("%d\n", a);
-    }
+    int a, b, x, d;
+    a = 2;
+    b = 3;
+    d = a + b;
+    x = d + b;
 }
