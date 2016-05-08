@@ -74,38 +74,47 @@ isTPure :: VInstruction -> Bool
 isTPure (VUnOp _ _ _ ) = True
 isTPure (VBinOp _ _ _ _ ) = True
 isTPure (VStore _ _ _) = False
-isTPure (VLookup _ _) = True
-isTPure (VAllocation _ _ _) = True
+isTPure (VLookup _ _) = False
+isTPure (VAllocation _ _ _) = False
 isTPure (VArrayStore _ _ _ _) = False
-isTPure (VArrayLookup _ _ _) = True
+isTPure (VArrayLookup _ _ _) = False
 isTPure (VArrayLen _ _) = True
 isTPure (VMethodCall _ _ _ _) = False
-isTPure (VReturn _ _) = True
-isTPure (VCondBranch _ _ _ _) = True
-isTPure (VUncondBranch _ _) = True
-isTPure (VUnreachable _ ) = True
-isTPure (VPHINode _ _) = True
+isTPure (VReturn _ _) = False
+isTPure (VCondBranch _ _ _ _) = False
+isTPure (VUncondBranch _ _) = False
+isTPure (VUnreachable _ ) = False
+isTPure (VPHINode _ _) = False
 
 loopOpts :: Builder -> Builder
 loopOpts builder =
   let pm = pmod builder
       fxs :: HashMap.Map String VFunction = functions pm
-      (cmbs) = HashMap.map (loops_function (globals pm) ) fxs
-      pm2 = pm{functions=HashMap.map fst cmbs}
-      in builder{pmod=pm2,debugs=( (debugs builder) ++ (concat $ map snd $ HashMap.elems cmbs) ) }
+      (pm2,dbgs) = HashMap.fold (\y (x,dbgs) -> let (x2,dbgs2) = loops_function x y in (x2,dbgs ++ dbgs2) ) (pm,[]) fxs
+      in builder{pmod=pm2,debugs=(debugs builder) ++ dbgs }
 
 
 data LoopInfo = LoopInfo {-loops-}[LoopInfo] {-not loops-}[String]
 
-getLoop domTree headerN blockNames = 
+getLoop func domTree headerN blockNames = 
   let inLoop :: [String] = filter (\x -> ( Set.member (x) ((HashMap.!) domTree headerN )) && ( Set.member headerN ((HashMap.!) domTree x )) ) blockNames
-      in inLoop
+      l2 = filter (\x -> ( not $ elem x inLoop) && (all (\x -> elem x inLoop) (blockPredecessors $ hml (blocks func) x "gl" ) ) && (isUnreachable func x) ) blockNames
+      in inLoop ++ l2
 
 data Loop = Loop {
+  funcName :: String,
   header :: String,
   subLoops :: [Loop],
   loopBlocks :: [String]
 } deriving (Eq, Show);
+
+getEntranceBlocks :: VFunction -> Loop -> [String]
+getEntranceBlocks func loop = filter (\y -> not $ elem y (loopBlocks loop) ) ( blockPredecessors (hml (blocks func) (header loop)  "eb") )
+
+getExitBlocks :: VFunction -> Loop -> [(String,String)]
+getExitBlocks func loop = 
+  let lb = loopBlocks loop
+      in concat $ map (\x -> filter (\(y,x) -> not $ elem y (loopBlocks loop) ) $ map (\z -> (z,x) ) $ blockSuccessors (hml (blocks func) x "eb") ) lb
 
 getLoops :: VFunction -> [String] -> [Loop]
 getLoops func blockNames = 
@@ -117,25 +126,86 @@ getLoops func blockNames =
                && ( Set.member b ((HashMap.!) domTree b ) )
                && not ( all (\x -> if HashMap.member x domTree then Set.member b ((HashMap.!) domTree x ) else False ) bpu )
         ) blockNames
-      loops :: [(String,[String])] = map (\b -> (b, getLoop domTree b blockNames)) loopHeaders
-      loopR :: [Loop] = map (\(head,bks) -> Loop head (getLoops func $ delete head bks) bks) loops
+      loops :: [(String,[String])] = map (\b -> (b, getLoop func domTree b blockNames)) loopHeaders
+      loopR :: [Loop] = map (\(head,bks) -> Loop (getName func) head (getLoops func $ delete head bks) bks) loops
       in --if blockNames /= ( blockOrder func) then error $ printf "bks:%s\n DT:%s\n" (show blockNames) (show domTree) else 
          loopR
 
 
-runAllLoops :: VFunction -> Loop -> (Bool, VFunction, [IO()] )
-runAllLoops func loop =
-  let subs@(changed, nfunc, dbg) = foldl (\(c,f,dbg) lp -> if c then (c,f,dbg) else runAllLoops func lp ) (False, func,[]) (subLoops loop)
-      in if changed then subs else
-        (False, func, dbg ++ [printf "in func %s saw loop with head :%s\n" (getName func) (header loop)] )
+licm :: PModule -> Loop -> (Bool, PModule, [IO()] )
+licm pm loop =
+  let func = hml (functions pm) (funcName loop) "licmL"
+      loopInsts = map (\x -> hml (functionInstructions func) x "licm" ) (concat $ map (\bn -> blockInstructions $ hml (blocks func) bn "par2") (loopBlocks loop) )
+      movable :: [VInstruction] = filter (\x -> (isTPure x) && all (\y -> case getUseValue func y of Just (InstRef f) -> (not $ elem f (map getName loopInsts) );_ -> True ) (getUsed x) ) loopInsts
+      fixed :: VFunction = foldl (\f inst ->
+                                        let bkN :: String = getInstructionParent f inst
+                                            bk = hml (blocks f) bkN "licm"
+                                            bk2 = bk{blockInstructions = delete (getName inst) (blockInstructions bk) } 
+                                            in f{blocks=HashMap.insert (getName bk2) bk2 (blocks f)}) func movable
+      enters :: [String] = getEntranceBlocks func loop
+      enterB :: [VBlock] = map (\x -> hml (blocks fixed) x ".2" ) enters
+      ebi = blockInstructions ( enterB !! 0 )
+      enterB2 = (enterB !! 0){blockInstructions = (take ((length ebi)-1) ebi) ++ (map getName movable) ++ [ebi !! ((length ebi) - 1)]}
+      exits :: [(String,String)] = getExitBlocks func loop
+      func2 = fixed{blocks=HashMap.insert (getName enterB2) enterB2 (blocks fixed)}
+      in if (length movable) == 0 then (False, pm, []) else --[printf "MI!!! in func %s saw loop with head :%s\nenters:%s exits:%s\nloop:%s\n\n\n" (funcName loop) (header loop) (show enters) (show exits) (show $ loopBlocks loop)]) else
+         if (length enterB) /= 1 then (False, pm, []) else --[printf "MI!!! in func %s saw loop with head :%s\nenters:%s exits:%s\nloop:%s\n\n\n" (funcName loop) (header loop) (show enters) (show exits) (show $ loopBlocks loop)]) else
+         (True, pm{functions=HashMap.insert (getName func2) func2 (functions pm)}, []) -- [printf "movable:%s\n" (show movable)] )
 
-loops_function :: HashMap.Map String (VType, Maybe Int) -> VFunction -> (VFunction, [IO()])
-loops_function globals func =
+{-
+parallelize :: PModule -> Loop -> (Bool, PModule, [IO()] )
+parallelize pm loop =
+  let func = hml (functions pm) (funcName loop) "parL"
+      loopInsts = map (\x -> hml (functionInstructions func) x "par" ) (concat $ map (\bn -> blockInstructions $ hml (blocks func) bn "par2") (loopBlocks loop) )
+      methodInsts :: [VInstruction] = filter (\inst -> case inst of VMethodCall _ _ n _ -> not ((n=="exit")||(n=="printf")); _ -> False ) loopInsts
+      readInsts :: [(ValueRef,Maybe ValueRef)] = catMaybes $ map (\inst -> case inst of VStore _ _ v -> Just (v,Nothing); VArrayStore _ _ v idx-> Just (v,Just idx); _ -> Nothing) loopInsts
+      writeInsts ::[(ValueRef,Maybe ValueRef)] = catMaybes $ map (\inst -> case inst of VLookup _ v -> Just (v,Nothing); VArrayLookup _ v idx -> Just (v,Just idx); _ -> Nothing) loopInsts
+      phis :: [VInstruction] = getPHIs func (header loop)
+      enters :: [String] = getEntranceBlocks func loop
+      exits :: [(String,String)] = getExitBlocks func loop
+      in if (length methodInsts) /= 0 then (False, pm, []) else --[printf "MI!!! in func %s saw loop with head :%s\nenters:%s exits:%s\nloop:%s\n\n\n" (funcName loop) (header loop) (show enters) (show exits) (show $ loopBlocks loop)]) else
+         if any (\(v,idx) -> elem v $ map fst writeInsts ) readInsts then (False,pm,[]) else--[printf "WI!!! in func %s saw loop with head :%s\nenters:%s exits:%s\nloop:%s\n\n\n" (funcName loop) (header loop) (show enters) (show exits) (show $ loopBlocks loop)]) else
+         if (length phis) /= 1 then (False, pm, []) else--[printf "LP!!! in func %s saw loop with head :%s\nenters:%s exits:%s\nloop:%s\n\n\n" (funcName loop) (header loop) (show enters) (show exits) (show $ loopBlocks loop)]) else
+         if (length enters) /= 1 then (False, pm, []) else
+         if (length exits) /= 1 then (False, pm, []) else
+         if (enters !! 0) /= "entry" then (False, pm, [printf "bad name for entrance to parallel region %s\n" (enters !! 0)]) else
+         let insts = HashMap.filterWithKey (\k _ -> any (\x -> elem k $ blockInstructions (hml (blocks func) x "pl") ) (loopBlocks loop) ) (functionInstructions func)
+             bks = HashMap.filterWithKey (\k _ -> elem k (loopBlocks loop) ) (blocks func)
+             fn = (getName func) ++ ".p"
+             (nm,pm2) = createID pm
+             (nm2,pm3) = createID pm2
+             (nm3,pm4) = createID pm3
+             (nm4,pm5) = createID pm4
+             --(nm5,pm6) = createID pm5
+             bks2 = HashMap.insert "entry" (VBlock (getName newF) "entry" [nm] [] [header loop]) bks
+             bks3 = HashMap.insert (fst $ exits !! 0) (VBlock (getName newF) (fst $ exits !! 0) [nm2] [snd $ exits !! 0] []) bks2
+             eb = hml (snd $ exits !! 0) bks "pl" 
+             ebi = blockInstructions eb
+             bks4 = HashMap.insert (snd $ exits !! 0) eb{blockInstructions=(take ((length ebi) - 2) ebi) ++ [nm3, nm4, ebi !! ((length ebi) - 2), ebi !! ((length ebi) - 1)]}
+             insts2 = HashMap.insert nm (VUncondBranch nm (enters !! 0)) insts
+             insts3 = HashMap.insert nm2 (VReturn nm2 Nothing) insts2
+             vr = case ebi !! ((length ebi) - 1) of VCondBranch _ cond _ _ -> if case cond of InstRef ref -> if ref /= (ebi !! ((length ebi) - 2)) then error "invalid cond" else ref
+             insts4 = HashMap.insert nm3 (VBinOp nm3 "+" (ArgRef 0) (ConstInt 1) ) insts3
+             insts5 = HashMap.insert nm4 (VBinOp nm4 "/" (InstRef nm3) (ConstInt 8) ) insts4
+             insts6 = HashMap.insert vr ( case ebi !! ((length ebi) - 2) of VBinOp d a b c -> (VBinOp d a b (InstRef nm4) ) ) insts5
+             newF = VFunction fn LLIR.TVoid [LLIR.TInt] insts3 bks4 (["entry"] ++ (loopBlocks loop) ++ [(fst $ exits !! 0)])
+             in (False, pm6{functions=HashMap.insert (getName newF) newF (functions pm)}, [printf "in func %s saw loop with head :%s\nenters:%s exits:%s\nloop:%s\n\n\n" (funcName loop) (header loop) (show enters) (show exits) (show $ loopBlocks loop)] )
+-}
+
+runAllLoops :: PModule -> Loop -> (Bool, PModule, [IO()] )
+runAllLoops pm loop =
+  let subs@(changed, pm2, dbg) = foldl (\(c,f,dbg) lp -> if c then (c,f,dbg) else runAllLoops f lp ) (False, pm,[]) (subLoops loop)
+      in if changed then subs else 
+        let s3@(c2,pm3,dbg2) = licm pm loop
+            in (c2,pm3,dbg++dbg2)
+
+loops_function :: PModule -> VFunction -> (PModule, [IO()])
+loops_function pm func =
   let loops = getLoops func (blockOrder func)
-      (changed,nfunc,dbgs) = foldl (\(c,f,dbg) lp-> if c then (c,f,dbg) else runAllLoops func lp ) (False, func,[]) loops
+      (changed,pm2,dbgs) = foldl (\(c,f,dbg) lp-> if c then (c,f,dbg) else runAllLoops f lp ) (False, pm,[]) loops
       in if changed then
-         let (f2,d1) = loops_function globals nfunc in (f2, dbgs ++ d1)
-         else (func,dbgs)
+         let (pm3,d1) = loops_function pm2 (hml (functions pm) (getName func) "lf") in (pm3, dbgs ++ d1)
+         else (pm2,dbgs)
 
 
 cfold :: Builder -> Builder

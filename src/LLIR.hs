@@ -549,7 +549,7 @@ getInstructionParent func instr =
         x :: [VBlock] = filter (\block -> any (True==) $ map f $ blockInstructions block) (HashMap.elems $ blocks func)
         in case x of
             [y] -> getName y
-            _ -> ""
+            _ -> error $ printf "Instruction %s not in z:%s\nfunction:%s\n" (show instr) (show x) (show func)
 
 blockToString :: (HashMap.Map String VInstruction) -> VBlock -> String
 blockToString hm (VBlock _ name instr pd sc) =
@@ -641,6 +641,19 @@ getInstruction (Builder pmod (Context fname _) _) name =
   do
     func <- HashMap.lookup fname (functions pmod)
     HashMap.lookup name (functionInstructions func)
+
+isUnreachable :: VFunction -> String -> Bool
+isUnreachable func blockN =
+  case do
+--    func <- getFunction builder (contextFunctionName $ location builder)
+    block <- HashMap.lookup blockN $ blocks func
+    let lst = blockInstructions block
+    final <- if ( length lst )== 0 then Nothing else Just $ last lst
+    fv <- HashMap.lookup final $ functionInstructions func
+    return $ case fv of
+      (VUnreachable _) -> True
+      _ -> False
+  of Just a -> a; Nothing -> False
 
 getTerminator :: Builder -> Maybe ValueRef
 getTerminator builder =
