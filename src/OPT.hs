@@ -40,7 +40,7 @@ cAssert builder =
         in builder{pmod=pm2}
 
 getReachable :: VFunction -> String -> Set.Set String -> Set.Set String
-getReachable func str s1 = 
+getReachable func str s1 =
   if str `Set.member` s1 then s1 else foldl (\acc x -> getReachable func x acc) (s1 `Set.union` (Set.singleton str) ) ( blockSuccessors $ (HashMap.!) (blocks func) str )
 
 cAssert_function :: VFunction -> VFunction
@@ -97,7 +97,7 @@ loopOpts builder =
 
 data LoopInfo = LoopInfo {-loops-}[LoopInfo] {-not loops-}[String]
 
-getLoop domTree headerN blockNames = 
+getLoop domTree headerN blockNames =
   let inLoop :: [String] = filter (\x -> ( Set.member (x) ((HashMap.!) domTree headerN )) && ( Set.member headerN ((HashMap.!) domTree x )) ) blockNames
       in inLoop
 
@@ -108,9 +108,9 @@ data Loop = Loop {
 } deriving (Eq, Show);
 
 getLoops :: VFunction -> [String] -> [Loop]
-getLoops func blockNames = 
+getLoops func blockNames =
   let domTree :: HashMap.Map String (Set.Set String) = reachable blockNames func
-      loopHeaders ::[String] = filter (\b -> 
+      loopHeaders ::[String] = filter (\b ->
         let bpu :: [String] = ( blockPredecessors $ (HashMap.!) (blocks func) b )
             bp :: [String] = filter (\x -> elem x blockNames) bpu
             in (length bp > 0)
@@ -119,7 +119,7 @@ getLoops func blockNames =
         ) blockNames
       loops :: [(String,[String])] = map (\b -> (b, getLoop domTree b blockNames)) loopHeaders
       loopR :: [Loop] = map (\(head,bks) -> Loop head (getLoops func $ delete head bks) bks) loops
-      in --if blockNames /= ( blockOrder func) then error $ printf "bks:%s\n DT:%s\n" (show blockNames) (show domTree) else 
+      in --if blockNames /= ( blockOrder func) then error $ printf "bks:%s\n DT:%s\n" (show blockNames) (show domTree) else
          loopR
 
 
@@ -179,7 +179,7 @@ cfold_inst inst@(VCondBranch name (ConstBool b) tb fb) func =
 
 -- TODO if block has only itself as predecessor
 cfold_inst inst@(VUncondBranch name succ) func =
--- if (name /= "%13") && (name /= "%6") then error $ printf "inst:%s\nPRE:%s\nPOST:%s" (show inst) (show func) (succ ++ "|" ++ (getName $ getParentBlock inst func) ) else 
+-- if (name /= "%13") && (name /= "%6") then error $ printf "inst:%s\nPRE:%s\nPOST:%s" (show inst) (show func) (succ ++ "|" ++ (getName $ getParentBlock inst func) ) else
     let post = hml (blocks func) succ $ printf "cfold rpred\n %s\n" (show func)
         in if 1 /= (length $ blockPredecessors post) then (func, False)
         else let
@@ -201,7 +201,7 @@ cfold_inst inst@(VUncondBranch name succ) func =
                             in updateInstructionF (VPHINode nam hm3 ) f ) f2 phis
                      in nf ) f1 (blockSuccessors post)
               f3 = deleteBlockNI post f2
-              in --if (name == "%7") then error $ printf "bs:%s\ninst:%s\nPRE:%s\nPOST:%s" (show $ blockSuccessors post) (show inst) (show func) (show f3) else 
+              in --if (name == "%7") then error $ printf "bs:%s\ninst:%s\nPRE:%s\nPOST:%s" (show $ blockSuccessors post) (show inst) (show func) (show f3) else
                  (f3, True)
 
 
@@ -378,14 +378,14 @@ cse_function domTree func =
             vb = hml (blocks f) bn "cse2"
             getInst = \x -> hml (functionInstructions f) x "cse3"
             bins = filter isPure2 $ map getInst (blockInstructions vb)
-            (changed1,f2) = --if bn /= "entry" then error $ printf "%s:%s\n" bn (show doms) else 
+            (changed1,f2) = --if bn /= "entry" then error $ printf "%s:%s\n" bn (show doms) else
                             foldl (\(changed2,f) b2 -> if changed2 /= Nothing then (changed2,f) else
                                                        let vb2 = hml (blocks f) b2 "cse4"
                                                            bins2 = map (\x -> hml (functionInstructions f) x "cse5" ) (blockInstructions vb2)
                                                            (c2, f2) = foldl (\(changed3,f) inst1 -> if changed3 /= Nothing then (changed3, f) else
-                                                                                                    foldl (\(changed4,f) inst2 -> --if ( (getName inst2) == "%44" ) && ( (getName inst1) == "%32" ) then error $ printf "bn:%s\ndoms:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show doms) (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f) else 
-                                                                                                                                  if changed4 /= Nothing then (changed4,f) else if not $ valueEq f inst1 inst2 then (changed4,f) else 
-                                                                                                                                    (Just (inst1, inst2), replaceAndRemove (InstRef $ getName inst1) f inst2 ) 
+                                                                                                    foldl (\(changed4,f) inst2 -> --if ( (getName inst2) == "%44" ) && ( (getName inst1) == "%32" ) then error $ printf "bn:%s\ndoms:%s\ninst2:%s\ninst1:%s\neq:%s\nF:%s" bn (show doms) (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show f) else
+                                                                                                                                  if changed4 /= Nothing then (changed4,f) else if not $ valueEq f inst1 inst2 then (changed4,f) else
+                                                                                                                                    (Just (inst1, inst2), replaceAndRemove (InstRef $ getName inst1) f inst2 )
                                                                                                           ) (Nothing, func) bins
                                                                             ) (Nothing, func) bins2
                                                            in (c2, f2)
@@ -397,9 +397,9 @@ cse_function domTree func =
                           let repBName = getName inst2
                               repDName = getName inst1
                               in (selemIndex repBName binsts) >= (selemIndex repDName binsts)
-                               ) || (not $ valueEq f inst1 inst2) then (changed6,f) else 
+                               ) || (not $ valueEq f inst1 inst2) then (changed6,f) else
                                  --error $ printf "bn:%s\ninst2:%s\ninst1:%s\neq:%s\nbk:%s\nprev:%s\nF:%s" bn (show inst2) (show inst1) (show $ valueEq f inst1 inst2 ) (show vb) (show func) (show f)
-                                 (Just (inst2,inst1), replaceAndRemove (InstRef $ getName inst2) f inst1 ) 
+                                 (Just (inst2,inst1), replaceAndRemove (InstRef $ getName inst2) f inst1 )
                          ) (Nothing, func) bins
                       ) (Nothing, func) bins
                   in (c2, f3)
@@ -411,10 +411,11 @@ cse_function domTree func =
 
 dce_function :: VFunction -> VFunction
 dce_function func =
-    foldl (\accFunc instr ->
-        if (length $ getUses instr accFunc) == 0 && (isPure instr)
-            then deleteInstruction instr accFunc
-            else accFunc) func (HashMap.elems $ functionInstructions func)
+    let (f, c) = foldl (\(accFunc, changed) instr ->
+            if (length $ getUses instr accFunc) == 0 && (isPure instr)
+                then (deleteInstruction instr accFunc, True)
+                else (accFunc, changed)) (func, False) (HashMap.elems $ functionInstructions func)
+        in if c then dce_function f else f
 
 partitionStoreLoadOther :: VFunction -> [Use] -> ([Use], [Use], [Use])
 partitionStoreLoadOther func uses =
