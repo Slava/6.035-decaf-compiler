@@ -349,6 +349,11 @@ replaceAllUses func instr val =
     let uses = getUses instr func
         in foldl (\acc use -> replaceUse acc use val) func uses
 
+replaceAllUsesValRef :: VFunction -> ValueRef -> ValueRef -> VFunction
+replaceAllUsesValRef func instr val =
+    let uses = getUsesValRef instr func
+        in foldl (\acc use -> replaceUse acc use val) func uses
+
 replaceBlockUses :: VFunction -> VInstruction -> [String] -> ValueRef -> VFunction
 replaceBlockUses func instr blocks val =
     let uses = getBlockUses instr func blocks
@@ -500,6 +505,28 @@ deleteBlock block func =
       f2 = foldl rf f1 succs
       in f2
 
+
+replacePredecessor :: VBlock -> String -> String -> VFunction -> VFunction
+replacePredecessor block pred pred2 func =
+  let npred = delete pred (blockPredecessors block)
+      block2 = block{blockPredecessors=npred ++ [pred2]}
+      f0 = updateBlockF block2 func
+      blockName = getName block2
+      phis :: [VInstruction] = getPHIs func blockName
+      f1 = foldl (\f phi@(VPHINode n mp ) ->
+                   let mp2 = HashMap.delete pred mp
+                       mp3 = HashMap.insert pred ( (HashMap.!) mp pred) mp2 
+                       in updateInstructionF (VPHINode n mp3) f ) f0 phis
+      nb0 = (HashMap.!) (blocks f1) pred
+      bs0 = blockSuccessors nb0
+      nb1 = nb0{blockSuccessors=delete (getName block) bs0}
+      f2 = updateBlockF nb1 f1
+      xb0 = (HashMap.!) (blocks f2) pred2
+      bs1 = blockSuccessors xb0
+      xb1 = xb0{blockSuccessors= if elem pred2 bs1 then bs1 else bs1 ++ [pred2]}
+      f3 = updateBlockF xb1 f2
+      in f3
+
 removePredecessor :: VBlock -> String -> VFunction -> VFunction
 removePredecessor block pred func =
   let npred = delete pred (blockPredecessors block)
@@ -570,7 +597,7 @@ getValues hm (idx:keys) =
 
 instance Show VFunction where
   show (VFunction functionName returnType arguments functionInstructions blocks blockOrder) =
-    "def " ++ (show returnType) ++ " "++ functionName ++ (show arguments) ++ "\n" ++ ( foldl (\acc x -> acc ++ (blockToString functionInstructions x)) "" (getValues blocks blockOrder) ) ++ "\n"
+    (show $ HashMap.keys $ functionInstructions)++ "\ndef " ++ (show returnType) ++ " "++ functionName ++ (show arguments) ++ "\n" ++ ( foldl (\acc x -> acc ++ (blockToString functionInstructions x)) "" (getValues blocks blockOrder) ) ++ "\n"
 
 instance Value VFunction where
   getType _ (VFunction _ returnType arguments _ _ _ ) = TFunction returnType arguments
@@ -641,6 +668,19 @@ getInstruction (Builder pmod (Context fname _) _) name =
   do
     func <- HashMap.lookup fname (functions pmod)
     HashMap.lookup name (functionInstructions func)
+
+isUnconditional :: VFunction -> String -> Bool
+isUnconditional func blockN =
+  case do
+--    func <- getFunction builder (contextFunctionName $ location builder)
+    block <- HashMap.lookup blockN $ blocks func
+    let lst = blockInstructions block
+    final <- if ( length lst )== 0 then Nothing else Just $ last lst
+    fv <- HashMap.lookup final $ functionInstructions func
+    case fv of
+      (VUncondBranch _ _) -> Just True
+      _ -> Just False
+  of Just a -> a; Nothing -> False
 
 isUnreachable :: VFunction -> String -> Bool
 isUnreachable func blockN =

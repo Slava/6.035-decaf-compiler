@@ -589,6 +589,9 @@ genAccess :: FxContext -> ValueRef -> (FxContext, String)
 genAccess cx (InstRef ref) =
   (cx, lookupVariable cx ref)
 
+genAccess cx (FunctionRef i) =
+  (cx, "$" ++ i)
+
 genAccess cx (ConstInt i) =
   (cx, "$" ++ (show i))
 
