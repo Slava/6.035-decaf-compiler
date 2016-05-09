@@ -118,7 +118,7 @@ getEntranceBlocks :: VFunction -> Loop -> [String]
 getEntranceBlocks func loop = filter (\y -> not $ elem y (loopBlocks loop) ) ( blockPredecessors (hml (blocks func) (header loop)  "eb") )
 
 getExitBlocks :: VFunction -> Loop -> [(String,String)]
-getExitBlocks func loop = 
+getExitBlocks func loop =
   let lb = loopBlocks loop
       in concat $ map (\x -> filter (\(y,x) -> not $ elem y (loopBlocks loop) ) $ map (\z -> (z,x) ) $ blockSuccessors (hml (blocks func) x "eb") ) lb
 
@@ -134,9 +134,22 @@ getLoops func blockNames =
         ) blockNames
       loops :: [(String,[String])] = map (\b -> (b, getLoop func domTree b blockNames)) loopHeaders
       loopR :: [Loop] = map (\(head,bks) -> Loop (getName func) head (getLoops func $ delete head bks) bks) loops
-      in --if blockNames /= ( blockOrder func) then error $ printf "bks:%s\n DT:%s\n" (show blockNames) (show domTree) else 
+      in --if blockNames /= ( blockOrder func) then error $ printf "bks:%s\n DT:%s\n" (show blockNames) (show domTree) else
          loopR
 
+addToDepth :: [Loop] -> Int -> String -> Int
+addToDepth loops depth instrBlock =
+    let nextLoop :: [Loop] = filter (\loop -> elem instrBlock (loopBlocks loop)) loops
+        in if length nextLoop == 0
+            then depth
+            else addToDepth (subLoops (nextLoop !! 0)) (depth + 1) instrBlock
+
+getInstructionLoopDepth :: VFunction -> VInstruction -> Int
+getInstructionLoopDepth func instr =
+    let loops :: [Loop] = getLoops func (blockOrder func)
+        funcBlocks :: [VBlock] = map (\blockName -> (HashMap.!) (blocks func) blockName) (blockOrder func)
+        instrBlock :: VBlock = (filter (\block -> elem (getName instr) (blockInstructions block)) funcBlocks) !! 0
+        in addToDepth loops 0 (blockName instrBlock)
 
 licm :: PModule -> Loop -> (Bool, PModule, [IO()] )
 licm pm loop =
@@ -146,7 +159,7 @@ licm pm loop =
       fixed :: VFunction = foldl (\f inst ->
                                         let bkN :: String = getInstructionParent f inst
                                             bk = hml (blocks f) bkN "licm"
-                                            bk2 = bk{blockInstructions = delete (getName inst) (blockInstructions bk) } 
+                                            bk2 = bk{blockInstructions = delete (getName inst) (blockInstructions bk) }
                                             in f{blocks=HashMap.insert (getName bk2) bk2 (blocks f)}) func movable
       enters :: [String] = getEntranceBlocks func loop
       enterB :: [VBlock] = map (\x -> hml (blocks fixed) x ".2" ) enters
@@ -190,12 +203,12 @@ parallelize pm loop =
              (nm8,pm9) = createID pm8
              (nm9,pm10) = createID pm9
              (nm10,pm11) = createID pm10
-             (beg0,fpm) = foldl (\(beg0,pm) inst -> 
+             (beg0,fpm) = foldl (\(beg0,pm) inst ->
                 let (nm,pm1) = createID pm
                     (nm2,pm2) = createID pm1
                     bld = Builder pm2 (LLIR.Context (getName func) "entry") []
                     ty = getType bld (InstRef inst)
-                    gn = "glob_" ++ (tail inst) 
+                    gn = "glob_" ++ (tail inst)
                     pm3 = pm2{globals=HashMap.insert gn (ty,Nothing) (globals pm1)}
                     in (beg0 ++ [((nm,nm2),(gn,inst))],pm3) ) ([],pm11) needs
              beg = map ( fst . fst) beg0
@@ -203,12 +216,12 @@ parallelize pm loop =
              lower = case phi of VPHINode n mp -> (HashMap.!) mp ( enters !! 0 )
              cmpName :: String = case branchI of VCondBranch _ cond _ _ -> case cond of InstRef ref -> ref
              cmp :: VInstruction = (HashMap.!) (functionInstructions func) cmpName
-             upper :: ValueRef = case cmp of VBinOp _ _ _ a -> a 
-             cmper :: ValueRef = case cmp of VBinOp _ _ a _ -> a 
+             upper :: ValueRef = case cmp of VBinOp _ _ _ a -> a
+             cmper :: ValueRef = case cmp of VBinOp _ _ a _ -> a
 
              bks2 = HashMap.insert "entry" (VBlock (getName newF) "entry" (beg++[nm3, nm4, nm5, nm6, nm7, nm8, nm9, nm10,nm]) [] [header loop]) bks
              bks3 = HashMap.insert (fst $ exits !! 0) (VBlock (getName newF) (fst $ exits !! 0) [nm2] [snd $ exits !! 0] []) bks2
-             eb = hml bks (snd $ exits !! 0) "pl" 
+             eb = hml bks (snd $ exits !! 0) "pl"
              ebi = blockInstructions eb
              branchI :: VInstruction = (HashMap.!) (functionInstructions func) ( ebi !! ((length ebi) - 1) )
              cmpIdx :: Int = case elemIndex cmpName ebi of Just a -> a
@@ -249,7 +262,7 @@ parallelize pm loop =
              ins4 = HashMap.insert mn2 (VMethodCall mn2 True "create_and_run_threads" [(FunctionRef (getName newF))] ) ins3
              ins5 = HashMap.insert mn3 (VUncondBranch mn3 (fst $ exits !! 0)) ins4
              enterB = (HashMap.!) (blocks func) (enters !! 0)
-             brN = last $ blockInstructions enterB 
+             brN = last $ blockInstructions enterB
              ins6 = HashMap.insert brN (case (HashMap.!) ins5 brN of VUncondBranch n _ -> VUncondBranch n (snd $ exits !! 0); VCondBranch n c t f -> if t == (header loop) then VCondBranch n c (snd $ exits !! 0 ) f else VCondBranch n c t (snd $ exits !! 0 ) ) ins5
              fins = foldl ( \insts ((nm,nm2),(gn,inst)) -> HashMap.insert nm2 (VStore nm2 (InstRef inst) (GlobalRef gn)) insts ) ins6 beg0
 
@@ -261,7 +274,7 @@ parallelize pm loop =
 runAllLoopsP :: PModule -> Loop -> (Bool, PModule, [IO()] )
 runAllLoopsP pm loop=
   let subs@(changed, pm2, dbg) = parallelize pm loop
-      in if changed then subs else 
+      in if changed then subs else
         let s3@(c2,pm3,dbg2) = foldl (\o@(c,f,dbg) lp -> if c then o else let (c2,f2,dbg2) = runAllLoopsP f lp in (c2,f2,dbg++dbg2) ) (False, pm,[]) (subLoops loop)
             in if c2 then (c2,pm3,dbg++dbg2) else
                (c2,pm,dbg++dbg2)
@@ -277,7 +290,7 @@ ploops_function pm func =
 runAllLoops :: PModule -> Loop -> (Bool, PModule, [IO()] )
 runAllLoops pm loop=
   let subs@(changed, pm2, dbg) = foldl (\o@(c,f,dbg) lp -> if c then o else let (c2,f2,dbg2) = runAllLoops f lp in (c2,f2,dbg++dbg2) ) (False, pm,[]) (subLoops loop)
-      in if changed then subs else 
+      in if changed then subs else
         let s3@(c2,pm3,dbg2) = licm pm loop
             in if c2 then (c2,pm3,dbg++dbg2) else
                (c2,pm,dbg++dbg2)
@@ -349,7 +362,6 @@ cfold_inst inst@(VCondBranch name ir@(InstRef ref) tb fb) func =
         in (f2, True)
 -}
 
--- TODO if block has only itself as predecessor
 cfold_inst inst@(VUncondBranch name succ) func =
 -- if (name /= "%13") && (name /= "%6") then error $ printf "inst:%s\nPRE:%s\nPOST:%s" (show inst) (show func) (succ ++ "|" ++ (getName $ getParentBlock inst func) ) else
     let post = hml (blocks func) succ $ printf "cfold rpred\n %s\n" (show func)

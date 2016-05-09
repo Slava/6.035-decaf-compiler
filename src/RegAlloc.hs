@@ -68,6 +68,7 @@ getRegister map name = HashMap.lookup name map
 regAlloc :: LLIR.Builder -> RBuilder
 regAlloc b =
   let pmod = LLIR.pmod b
+       
 
 data Stack a = Stack [a] deriving Show
 
