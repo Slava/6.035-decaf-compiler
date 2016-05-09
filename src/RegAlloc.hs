@@ -41,6 +41,34 @@ getEquivalenceClasses f =
 phiMemCoalesce :: LLIR.Builder -> LLIR.VInstruction -> LLIR.Builder
 phiMemCoalesce b k
 
+data RInstruction = RUnOp {- name -} String {- operand -} String {- argument name -} ValueRef {- register -} (Maybe String)
+                  | RBinOp {- name -} String {- operand -} String {- argument name -} ValueRef ValueRef {- register -} (Maybe String)
+                  | RStore  String {- tostore -} ValueRef {- location -} ValueRef
+                  | RLookup String ValueRef {- register -} (Maybe String)
+                  | RAllocation String {- type -} VType {- if array -} (Maybe Int)
+                  | RArrayStore String {- tostore -} ValueRef {- array -} ValueRef {- idx -} ValueRef
+                  | RArrayLookup String {- array -} ValueRef {- idx -} ValueRef {- register -} (Maybe String)
+                  | RArrayLen String ValueRef {- register -} (Maybe String)
+                  | RReturn String (Maybe ValueRef)
+                  | RCondBranch String {-cond-} ValueRef {-true-} String {-false-} String {- register -} (Maybe String)
+                  | RUnreachable String 
+                  | RUncondBranch String String
+                  | RMethodCall String {- is-callout? -} Bool {- fname -} String {- args -} [ValueRef] {- register -} (Maybe String)
+                  | RPHINode {- name -} String (HashMap.Map {- block predecessor -} String {- value -} ValueRef) {- register -} (Maybe String)
+  deriving (Eq, Show);
+
+type RegisterMap = HashMap.Map String String
+
+setRegister :: RegisterMap -> String -> String -> RegisterMap
+setRegister map name register = HashMap.insert name register map
+
+getRegister :: RegisterMap -> String -> Maybe String
+getRegister map name = HashMap.lookup name map
+
+regAlloc :: LLIR.Builder -> RBuilder
+regAlloc b =
+  let pmod = LLIR.pmod b
+
 data Stack a = Stack [a] deriving Show
 
 emptyStack :: Stack a
