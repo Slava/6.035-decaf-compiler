@@ -6,6 +6,40 @@ import Prelude
 import qualified LLIR
 import Data.Sequence
 import Data.Foldable (toList)
+import Data.Map as HashMap 
+
+phiLift :: LLIR.Builder -> LLIR.VFunction -> LLIR.VInstruction -> LLIR.Builder
+phiLift b f (LLIR.VPHINode name vars) =
+  let (b3, newIds) = Prelude.foldl (\(builder, ids) (block, ref) ->
+          let appendPoint = LLIR.setInsertionPoint (LLIR.functionName f, block) b
+              (allocId, pmod1) = LLIR.createID $ LLIR.pmod b
+              newIds = ids ++ [(block, LLIR.InstRef allocId)]
+              alloca = LLIR.VAllocation allocId (LLIR.getType b ref) Nothing
+              b1 = LLIR.appendInstruction alloca b{LLIR.pmod=pmod1}
+              (storeId, pmod2) = LLIR.createID $ LLIR.pmod b1
+              (store, b2) = LLIR.createStore ref (LLIR.InstRef allocId) b1 in
+                (b2, newIds))
+        (b, [])
+        (HashMap.toList vars)
+      newVars = Prelude.foldl (\hashmap (block, var) -> HashMap.insert block var hashmap) HashMap.empty newIds in
+          LLIR.updateInstruction (LLIR.VPHINode name newVars) b3
+
+getEquivalenceClasses :: LLIR.VFunction -> HashMap String [LLIR.ValueRef]
+getEquivalenceClasses f =
+  Prelude.foldl (\table (_, b) -> 
+                  Prelude.foldl (\name -> 
+                                let instruction = HashMap.lookup name (LLIR.functionInstructions f) in
+                                  case instruction of
+                                    Nothing -> table
+                                    Just i -> case i of
+                                      LLIr.VPHINode
+                  ) table $ LLIR.blockInstructions b) 
+                HashMap.empty 
+                (toList $ LLIR.blocks f)
+
+
+phiMemCoalesce :: LLIR.Builder -> LLIR.VInstruction -> LLIR.Builder
+phiMemCoalesce b k
 
 data Stack a = Stack [a] deriving Show
 
@@ -48,10 +82,10 @@ numNodes g = Data.Sequence.length . Data.Sequence.filter (\x -> x) $ nodes g
 
 addNeighbor :: Graph -> Node -> Node -> Graph
 addNeighbor g n1 n2 = 
-  let matrix1 = update (uid n1) (update (uid n2) True (index (matrix g) (uid n1))) (matrix g) 
-      matrix2 = update (uid n2) (update (uid n1) True (index matrix1 (uid n2))) (matrix1)
-      list1 = update (uid n2) (index (list g) (uid n2) |> n1) (list g)
-      list2 = update (uid n1) (index list1 (uid n1) |> n2) (list1) in
+  let matrix1 = Data.Sequence.update (uid n1) (Data.Sequence.update (uid n2) True (index (matrix g) (uid n1))) (matrix g) 
+      matrix2 = Data.Sequence.update (uid n2) (Data.Sequence.update (uid n1) True (index matrix1 (uid n2))) (matrix1)
+      list1 = Data.Sequence.update (uid n2) (index (list g) (uid n2) |> n1) (list g)
+      list2 = Data.Sequence.update (uid n1) (index list1 (uid n1) |> n2) (list1) in
         Graph matrix2 list2 (nodes g) (colors g)
 
 isNeighbor :: Graph -> Node -> Node -> Bool
@@ -62,26 +96,26 @@ numNeighbors g n = Data.Sequence.length $ getNeighbors g n
 
 removeNode :: Graph -> Node -> Graph
 -- removeNode g n =
---   let matrix1 = update n (Data.Sequence.replicate (nodes g) False) $ matrix g
---       matrix2 = fmap (\list -> update (uid n) False list) matrix1
+--   let matrix1 = Data.Sequence.update n (Data.Sequence.replicate (nodes g) False) $ matrix g
+--       matrix2 = fmap (\list -> Data.Sequence.update (uid n) False list) matrix1
 --       list1 = fmap (\list -> Data.Sequence.filter (\a -> (uid a) /= n) list) $ list g
---       nodes1 = update n False $ nodes g in
+--       nodes1 = Data.Sequence.update n False $ nodes g in
 --         Graph matrix2 list1 nodes1
 removeNode g n =
-  let nodes1 = update (uid n) False $ nodes g in
+  let nodes1 = Data.Sequence.update (uid n) False $ nodes g in
     Graph (matrix g) (list g) nodes1 (colors g)
 
 -- isEmpty :: Graph -> Bool
--- isEmpty g = foldl (&&) (nodes g) True
+-- isEmpty g = Prelude.foldl (&&) (nodes g) True
 
 restoreNode :: Graph -> Node -> Graph
 restoreNode g n =
-  let nodes1 = update (uid n) True $ nodes g
-      colors1 = update (uid n) (color n) $ colors g in
+  let nodes1 = Data.Sequence.update (uid n) True $ nodes g
+      colors1 = Data.Sequence.update (uid n) (color n) $ colors g in
     Graph (matrix g) (list g) nodes1 colors1
 
 getPresentNodes :: Graph -> Seq Int
-getPresentNodes g = fmap (\(i, present) -> i) (Data.Sequence.filter (\(i, present) -> present) $ Data.Sequence.zip (fromList [1..(Data.Sequence.length $ nodes g)]) (nodes g))
+getPresentNodes g = fmap (\(i, present) -> i) (Data.Sequence.filter (\(i, present) -> present) $ Data.Sequence.zip (Data.Sequence.fromList [1..(Data.Sequence.length $ nodes g)]) (nodes g))
 
 getNeighbors :: Graph -> Node -> Seq Node
 getNeighbors g n = Data.Sequence.filter (\x -> uid x `elem` getPresentNodes g) $ index (list g) (uid n)
@@ -97,7 +131,7 @@ neighborColors g n = fmap (\x -> case color x of
 simplifyGraph :: Graph -> Stack Node -> Int -> (Graph, Stack Node)
 simplifyGraph g (Stack []) k = (g, emptyStack)
 simplifyGraph g s k = 
-  let (simplified, stack, removed) = foldl  (\(graph, stack, removed) i -> 
+  let (simplified, stack, removed) = Prelude.foldl  (\(graph, stack, removed) i -> 
                                                 if removed then (graph, stack, removed) else
                                                            if numNeighbors g (emptyNode i) < k then (removeNode graph (emptyNode i), push stack $ emptyNode i, True) else (graph, stack, False))
                                             (g, s, False)
