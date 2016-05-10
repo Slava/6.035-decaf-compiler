@@ -225,7 +225,7 @@ parallelize pm loop =
              ebi = blockInstructions eb
              branchI :: VInstruction = (HashMap.!) (functionInstructions func) ( ebi !! ((length ebi) - 1) )
              cmpIdx :: Int = case elemIndex cmpName ebi of Just a -> a
-             bks4 = HashMap.insert (snd $ exits !! 0) eb{blockInstructions=(take cmpIdx ebi) ++ [nm3, nm4] ++ (drop cmpIdx ebi)} bks3
+             bks4 = HashMap.insert (snd $ exits !! 0) eb{blockInstructions=(take cmpIdx ebi) ++ [] ++ (drop cmpIdx ebi)} bks3
              insts2 = HashMap.insert nm (VUncondBranch nm (header loop)) insts
              insts3 = HashMap.insert nm2 (VReturn nm2 Nothing) insts2
 
@@ -710,7 +710,7 @@ gmem2reg_function pm func =
          else (npm, dbgs0)
 
 optimize :: Builder -> Builder
-optimize b = cfold $ {- ploopOpts $ -} loopOpts $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
+optimize b = cfold $ ploopOpts $ loopOpts $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
 --optimize b = cfold $ loopOpts $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int

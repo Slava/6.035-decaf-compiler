@@ -67,10 +67,12 @@ data FxContext = FxContext {
 } deriving(Eq, Show);
 
 getVariableToSpill :: FxContext -> String
-getVariableToSpill cx = head $ variablesInRegisters cx
+getVariableToSpill cx = head $ variablesInRegisters cx `debug` "spilling variable"
 
 getVariableToSpillRestricted :: FxContext -> [String] -> String
-getVariableToSpillRestricted cx dont = head $ filter (\var -> not $ var `elem` dont) $ variablesInRegisters cx
+getVariableToSpillRestricted cx dont =
+  let filtered = filter (\var -> not $ var `elem` dont) $ variablesInRegisters cx in
+  head filtered
 
 -- returns the new context and the assembly to spill
 spillVariable :: FxContext -> (FxContext, String)
@@ -145,7 +147,7 @@ getVarString :: FxContext -> String -> String
 getVarString cx var = locStr $ getVar cx var
 
 lookupVariable :: FxContext -> String -> String
-lookupVariable fxc var | trace ("# lookupVariable: looking for variable " ++ var) False = undefined
+{- lookupVariable fxc var | trace ("# lookupVariable: looking for variable " ++ var) False = undefined -}
 lookupVariable fxc var =
   let table = (variables fxc) in
   case head var of
@@ -153,7 +155,7 @@ lookupVariable fxc var =
     _ -> locStr $ hml table var "lookupVariable"
 
 setVariableLoc :: FxContext -> String -> InstLoc -> FxContext
-setVariableLoc fcx var loc | trace ("# setVariableLoc: setting variable " ++ var ++ " to " ++ show loc) False = undefined
+{- setVariableLoc fcx var loc | trace ("# setVariableLoc: setting variable " ++ var ++ " to " ++ show loc) False = undefined -}
 setVariableLoc fcx var reg@(Register r) = 
     let ncx1 = fcx{variables=HashMap.insert var reg (variables fcx)} -- `debug` ("# current variables table: " ++ (show $ variables fcx))
     in
@@ -192,7 +194,7 @@ getPreCall cx args =
       argsInRegisters = (foldl (\acc (arg, reg) -> acc ++ "  movq " ++  (fst arg) ++ ", " ++ reg ++ "\n") "" (zip args argRegs))
       pushedArgs = (foldl (\acc arg -> acc ++ "  pushq " ++ (fst arg) ++ "\n") "" (reverse remainingArgs)) in
   "  #precall\n" ++
-  (arrayToLine $ map (\reg -> "push " ++ reg) $ pushedRegisters cx) ++
+  (arrayToLine $ map (\reg -> "pushq " ++ reg) $ pushedRegisters cx) ++
   -- pusha ++ 
   argsInRegisters ++
   pushedArgs ++
@@ -215,11 +217,11 @@ getProlog cx argsLength localsSize =
   "  movq %rsp, %rbp\n" ++
   "  subq $" ++ (show localsSize) ++ ", %rsp\n" ++
   -- put register arguments to stack
-  {- ( arrayToLine $ concat $ map (\(x, y) ->
+  ( arrayToLine $ concat $ map (\(x, y) ->
     let fm = x
         to = getRef cx $ ArgRef (y-1) (name cx)
         in
-          if fm == to then [] else move x to ) $ zip argz [1..argsLength] ) ++ -}
+          if fm == to then [] else move x to ) $ zip argz [1..argsLength] ) ++
   "  #/prolog\n"
 
 getEpilog :: String
@@ -277,10 +279,9 @@ genFunction cx f =
       ncx0 = foldl (\cx (idx, arg) ->
                 let sz = 8 in
                     if idx <= 6 then
-                      setVariableLoc cx (LLIR.functionName f ++ "@" ++ show (idx - 1)) (getArgReg $ idx - 1)
-                      {- updateOffsetBy ( setVariableLoc cx
+                      updateOffsetBy ( setVariableLoc cx
                                     (LLIR.functionName f ++ "@" ++ show (idx - 1))
-                                    (Memory "%rbp" $ ( -((offset cx) + sz)  ) ) ) sz -}
+                                    (Memory "%rbp" $ ( -((offset cx) + sz)  ) ) ) sz
                     else setVariableLoc cx
                                   (LLIR.functionName f ++ "@" ++ show (idx - 1))
                                   (Memory "%rbp" $ ( (idx - 6) + 2 ) * 6 ) )
@@ -377,19 +378,24 @@ genBlock cx block name f =
         (_,op0,a1,a2) = case cmpI of
           VBinOp a b c d -> (a,b,c,d)
           _ -> error "badbin"
-        r1 :: String = getRef cx a1
-        r2 :: String = getRef cx a2
-      	phis = (LLIR.getPHIs (function cx) tB) ++ (LLIR.getPHIs (function cx) fB)
+        r1 :: String = getRef ncx a1
+        r2 :: String = getRef ncx a2
+      	phis = (LLIR.getPHIs (function ncx) tB) ++ (LLIR.getPHIs (function ncx) fB)
       	cors = concat $ map (\(VPHINode pname hm) ->
-            let var = locStr $ getVar cx pname
-                str :: String = CodeGen.blockName cx
-                val = getRef cx (hml hm str "genBlock")
+            let var = locStr $ getVar ncx pname
+                str :: String = CodeGen.blockName ncx
+                val = getRef ncx (hml hm str "genBlock")
                 in move val var
           ) phis
         (x1,x2,mvs) = makeOneReg r1 r2 "%rax"
         (y1,y2,op) = if isImmediateS x1 then (x2, x1, swapBinop op0) else (x1, x2, op0)
         mp = HashMap.fromList [("==","je"),("!=","jne"),("u<","jb"),("u<=","jbe"),("u>","ja"),("u>","jae"),("<","jl"),("<=","jle"),(">","jg"),(">=","jge")]
-        insts = ["# " ++ (show cmpI), "# "++ (show termI), printf "cmpq %s, %s" y2 y1, printf "%s %s_%s" (hml mp op "reverse cmp") (CodeGen.name cx) tB, printf "jmp %s_%s" (CodeGen.name cx) fB]
+        insts = [
+          "# " ++ (show cmpI),
+          "# "++ (show termI),
+          printf "cmpq %s, %s" y2 y1,
+          printf "%s %s_%s" (hml mp op "reverse cmp") (CodeGen.name ncx) tB,
+          printf "jmp %s_%s" (CodeGen.name ncx) fB]
         in arrayToLine $ cors ++ mvs ++ insts
       in (ncx, blockName ++ ":\n" ++ setupGlobals ++ s ++ fastEnd)
 
@@ -515,20 +521,14 @@ genInstruction cx i@(VBinOp result "/" val1 val2) blockName =
       ncx2 = if (not $ isRegisterS loc2) || used2 then cx else clearRegister ncx1 loc2
       availableRegisters = numAvailableRegisters cx `debug` ("# " ++ show val1 ++ " future used status is " ++ show used1 ++ " and " ++ show val2 ++ " future used status is " ++ show used2)
       numConstants = length $ filter (\val -> isConstant val) [val1, val2] in
-        let (ncx3, move1) = if (availableRegisters >= 2) || (availableRegisters == 1 && (not $ used1)) then (ncx2, "") else (if availableRegisters == 1 then spillVariableNot ncx2 [loc1, loc2] else spillTwiceNot ncx2 [loc1, loc2] `debug` "# spilling a variable from binOp!\n")
-            (ncx4, move2, swapReg1) = if "%rax" `elem` getAvailableRegisters ncx3 then (ncx3, move1 ++ (arrayToLine $ move loc1 "%rax"), "NONE") else
-              let swapReg = if loc1 `elem` getAvailableRegisters ncx3 then loc1 else getNotThisRegister ncx3 loc2 in
-                (useRegister (changeVariableLoc ncx3 (Register "%rax") (Register swapReg)) swapReg, move1 ++ swapRegisters swapReg "%rax" ++ (if swapReg == loc1 then "" else arrayToLine $ move loc1 "%rax"), swapReg)
-            (ncx5, move3, swapReg2) = if "%rdx" `elem` getAvailableRegisters ncx4 then (ncx4, move2, "NONE") else
-              let swapReg = getNotThisRegister ncx4 loc2 in
-                (useRegister (changeVariableLoc ncx4 (Register "%rdx") (Register swapReg)) swapReg, move2 ++ swapRegisters swapReg "%rdx", swapReg)
-            (ncx6, smallMove) = if isImmediateS loc2 && numAvailableRegisters ncx5 == 0 then spillVariableNot ncx6 ["%rax", "%rdx"] else (ncx5, "")
-            (move4, divLoc) = if isImmediateS loc2 then let reg = forceRegister ncx6 in (move3 ++ smallMove ++ (arrayToLine $ move loc2 reg), reg) else (move3, loc2)
-            (addPushCode, ncx7) = pushCallee ncx6 swapReg1
-            (addPushCode1, ncx8) = pushCallee ncx7 swapReg2
-            ncx9 = setVariableLoc ncx8 result (Register "%rax")
+        let (ncx3, move1) = (if (availableRegisters >= 1) then (ncx2, "") else spillVariableNot ncx2 [loc1, loc2] `debug` "# spilling a variable from binOp!\n")
+            (ncx4, move2, nloc) = if (isImmediateS loc2) then
+                                    (ncx3, "  movq " ++ loc2 ++ ", %rbx\n", "%rbx")
+                                  else (ncx4, "", loc2)
+            (ncx5, retCode, newReg) = (let reg = forceRegister ncx3 in (setVariableLoc ncx3 result (Register reg), "movq " ++ loc1 ++ ", %rax\n  cqto\n  idivq " ++ nloc ++ "\n  movq %rax, " ++ reg ++ "\n", reg))
+            (addPushCode, ncx6) = pushCallee ncx5 newReg
         in
-          (ncx9, move4 ++ "  cqto\n  idivq " ++ divLoc ++ "\n") -- `debug` ("# variables table is now " ++ (show $ variables ncx4))
+          (ncx5, move1 ++ move2 ++ retCode) -- `debug` ("# variables table is now " ++ (show $ variables ncx4))
 
 genInstruction cx i@(VBinOp result "%" val1 val2) blockName =
   let loc1 = getRef cx val1
@@ -539,20 +539,14 @@ genInstruction cx i@(VBinOp result "%" val1 val2) blockName =
       ncx2 = if (not $ isRegisterS loc2) || used2 then cx else clearRegister ncx1 loc2
       availableRegisters = numAvailableRegisters cx `debug` ("# " ++ show val1 ++ " future used status is " ++ show used1 ++ " and " ++ show val2 ++ " future used status is " ++ show used2)
       numConstants = length $ filter (\val -> isConstant val) [val1, val2] in
-        let (ncx3, move1) = if (availableRegisters >= 2) || (availableRegisters == 1 && (not $ used1)) then (ncx2, "") else (if availableRegisters == 1 then spillVariableNot ncx2 [loc1, loc2] else spillTwiceNot ncx2 [loc1, loc2] `debug` "# spilling a variable from binOp!\n")
-            (ncx4, move2, swapReg1) = if "%rax" `elem` getAvailableRegisters ncx3 then (ncx3, move1 ++ (arrayToLine $ move loc1 "%rax"), "NONE") else
-              let swapReg = if loc1 `elem` getAvailableRegisters ncx3 then loc1 else getNotThisRegister ncx3 loc2 in
-                (useRegister (changeVariableLoc ncx3 (Register "%rax") (Register swapReg)) swapReg, move1 ++ swapRegisters swapReg "%rax" ++ (if swapReg == loc1 then "" else arrayToLine $ move loc1 "%rax"), swapReg)
-            (ncx5, move3, swapReg2) = if "%rdx" `elem` getAvailableRegisters ncx4 then (ncx4, move2, "NONE") else
-              let swapReg = getNotThisRegister ncx4 loc2 in
-                (useRegister (changeVariableLoc ncx4 (Register "%rdx") (Register swapReg)) swapReg, move2 ++ swapRegisters swapReg "%rdx", swapReg)
-            (ncx6, smallMove) = if isImmediateS loc2 && numAvailableRegisters ncx5 == 0 then spillVariableNot ncx6 ["%rax", "%rdx"] else (ncx5, "")
-            (move4, divLoc) = if isImmediateS loc2 then let reg = forceRegister ncx6 in (move3 ++ smallMove ++ (arrayToLine $ move loc2 reg), reg) else (move3, loc2)
-            (addPushCode, ncx7) = pushCallee ncx6 swapReg1
-            (addPushCode1, ncx8) = pushCallee ncx7 swapReg2
-            ncx9 = setVariableLoc ncx8 result (Register "%rdx")
+        let (ncx3, move1) = (if (availableRegisters >= 1) then (ncx2, "") else spillVariableNot ncx2 [loc1, loc2] `debug` "# spilling a variable from binOp!\n")
+            (ncx4, move2, nloc) = if (isImmediateS loc2) then
+                                    (ncx3, "  movq " ++ loc2 ++ ", %rbx\n", "%rbx")
+                                  else (ncx4, "", loc2)
+            (ncx5, retCode, newReg) = (let reg = forceRegister ncx3 in (setVariableLoc ncx3 result (Register reg), "movq " ++ loc1 ++ ", %rax\n  cqto\n  idivq " ++ nloc ++ "\n  movq %rdx, " ++ reg ++ "\n", reg))
+            (addPushCode, ncx6) = pushCallee ncx5 newReg
         in
-          (ncx9, move4 ++ "  cqto\n  idivq " ++ divLoc ++ "\n") -- `debug` ("# variables table is now " ++ (show $ variables ncx4))
+          (ncx5, move1 ++ move2 ++ retCode) -- `debug` ("# variables table is now " ++ (show $ variables ncx4))
 
 genInstruction cx i@(VBinOp result op val1 val2) blockName =
     let loc1 = getRef cx val1
@@ -564,8 +558,10 @@ genInstruction cx i@(VBinOp result op val1 val2) blockName =
         availableRegisters = numAvailableRegisters cx `debug` ("# " ++ show val1 ++ " future used status is " ++ show used1 ++ " and " ++ show val2 ++ " future used status is " ++ show used2)
         numConstants = length $ filter (\val -> isConstant val) [val1, val2] in
           let (ncx3, move1) = if ((availableRegisters == 1 && used2) || availableRegisters >= 2) || (val1 == val2 && not used1) then (ncx2, "") else spillVariableNot ncx2 [loc1, loc2] `debug` "# spilling a variable from binOp!\n"
-              (ncx4, move2, resultReg) = let reg = if not used1 && isRegisterS loc1 then loc1 else getNotThisRegister ncx3 loc2 in
-                  (setVariableLoc ncx3 result (Register reg), move1 ++ (if reg == loc1 then "" else arrayToLine $ move loc1 reg), reg)
+              (ncx4, move2, resultReg) = let (nncx, reg, extraCode) = if not used1 && isRegisterS loc1
+                                                   then (ncx3, loc1, "")
+                                                   else getNotThisRegister ncx3 loc2 "" in
+                                         (setVariableLoc nncx result (Register reg), move1 ++ extraCode ++ (if reg == loc1 then "" else arrayToLine $ move loc1 reg), reg)
               (addPushCode, ncx5) = pushCallee ncx4 resultReg
           in
             (ncx5, move2 ++ (arrayToLine $ genOp op loc2 resultReg)) -- `debug` ("# variables table is now " ++ (show $ variables ncx4))
@@ -739,7 +735,7 @@ instructionUsesValue (VPHINode _ map) val = val `elem` HashMap.elems map
 instructionUsesValue _ _ = False
 
 valUsedBeyondInstruction :: FxContext -> ValueRef -> VInstruction -> String {- block name -} -> Bool
-valUsedBeyondInstruction cx val instruction blockName | trace ("valUsedBeyondInstruction: checking how much " ++ show val ++ " was used") False = undefined
+{- valUsedBeyondInstruction cx val instruction blockName | trace ("valUsedBeyondInstruction: checking how much " ++ show val ++ " was used") False = undefined -}
 valUsedBeyondInstruction cx val instruction blockName = 
   let vFunc = function cx
       uses = getUsesValRef val vFunc `debug` "here"
@@ -926,7 +922,7 @@ gen mod =
 type RegisterMap = HashMap.Map String Bool
 
 emptyRegisters :: RegisterMap 
-emptyRegisters = HashMap.fromList [("%rax", False), ("%rbx", False), ("%rcx", False), ("%rdx", False), ("%rsi", False), ("%rdi", False), ("%r8", False), ("%r9", False), ("%r10", False), ("%r11", False), ("%r12", False), ("%r13", False), ("%r14", False), ("%r15", False)]
+emptyRegisters = HashMap.fromList [("%r10", False), ("%r11", False), ("%r12", False), ("%r13", False), ("%r14", False), ("%r15", False)]
 
 getAvailableRegisters :: FxContext -> [String]
 getAvailableRegisters cx = map fst $ filter (\val -> not $ snd val) $ HashMap.toList $ registers cx
@@ -937,23 +933,29 @@ getUsedRegisters cx = map fst $ filter (\val -> snd val) $ HashMap.toList $ regi
 numAvailableRegisters :: FxContext -> Int
 numAvailableRegisters cx = length $ getAvailableRegisters cx
 
-registerOrdering = ["%r8", "%r9", "%r10", "%r11", "%rcx", "%rdx", "%rax", "%rdi", "%rsi", "%rbx", "%r12", "%r13", "%r14", "%r15"]
+registerOrdering = ["%r8", "%r9", "%r10", "%r11", "%r12", "%r13", "%r14", "%r15"]
 
 getAvailableRegister :: FxContext -> Maybe String
 getAvailableRegister cx =
   let rs = getAvailableRegisters cx in
     if length rs == 0 then Nothing else Just $ head $ filter (\r -> r `elem` rs) registerOrdering
 
-getNotThisRegister :: FxContext -> String -> String
-getNotThisRegister cx reg =
-  let rs = getAvailableRegisters cx in
-    head $ filter (\r -> r `elem` rs && r /= reg) registerOrdering -- `debug` ("finding registers that's not " ++ reg)
+getNotThisRegister :: FxContext -> String -> String -> (FxContext, String, String)
+getNotThisRegister cx reg code =
+  let rs = getAvailableRegisters cx
+      filtered = filter (\r -> r `elem` rs && r /= reg) registerOrdering -- `debug` ("finding registers that's not " ++ reg)
+  in
+    if length filtered == 0 then
+      let (ncx, ncode) = spillVariableNot cx [reg] in
+      getNotThisRegister ncx reg ncode
+    else (cx, head $ filtered, code)
 
 forceRegister :: FxContext -> String
 forceRegister cx = case getAvailableRegister cx of Just r -> r -- `debug` "forcing finding register"
 
 debug :: a -> String -> a
-debug val s = trace s val
+--debug val s = trace s val
+debug val s = val
 
 pusha =
   "  push %rax\n" ++
