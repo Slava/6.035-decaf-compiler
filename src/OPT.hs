@@ -710,7 +710,7 @@ gmem2reg_function pm func =
          else (npm, dbgs0)
 
 optimize :: Builder -> Builder
-optimize b = cfold $ ploopOpts $ loopOpts $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
+optimize b = cfold $ {- ploopOpts $ -} loopOpts $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
 --optimize b = cfold $ loopOpts $ cfold $ dce $ cAssert $ cse $ gmem2reg $ mem2reg b
 
 unsafeElemIndex :: Eq a => a -> [a] -> Int

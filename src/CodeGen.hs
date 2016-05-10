@@ -301,7 +301,8 @@ genFunction cx f =
                    (ncx1, "") $ LLIR.blockOrder f
       prolog = getProlog ncx2 argsLength (closestMultipleOf16 $ (offset ncx2 + 8)) -- uhh not sure if the + 8 is needed but lets be safe
       saveRegs = foldl (\s (reg, pushed) -> if pushed then (s ++ "  push " ++ reg ++ "\n") else "") "" $ (HashMap.toList $ calleePushed ncx2)
-      strRes = "\n" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ saveRegs ++ blocksStr ++ getEpilog in
+      restoreRegs = foldl (\s (reg, pushed) -> if pushed then (s ++ "  pop " ++ reg ++ "\n") else "") "" $ reverse (HashMap.toList $ calleePushed ncx2)
+      strRes = "\n" ++ LLIR.functionName f ++ ":\n" ++ prolog ++ saveRegs ++ blocksStr ++ restoreRegs ++ getEpilog in
       --if (LLIR.getName f) /= "sum" then
         (global ncx2, strRes) -- `debug` ("# final variables: " ++ (show $ variables ncx2))
       --else
@@ -741,7 +742,7 @@ valUsedBeyondInstruction :: FxContext -> ValueRef -> VInstruction -> String {- b
 valUsedBeyondInstruction cx val instruction blockName | trace ("valUsedBeyondInstruction: checking how much " ++ show val ++ " was used") False = undefined
 valUsedBeyondInstruction cx val instruction blockName = 
   let vFunc = function cx
-      uses = getUsesValRef val vFunc
+      uses = getUsesValRef val vFunc `debug` "here"
       blocksUsed = filter (\block -> block /= blockName) $ map (\(Use name _) ->
                                   case HashMap.lookup name $ functionInstructions vFunc {- HashMap.! name -} of
                                      Just i -> getInstructionParent vFunc i
